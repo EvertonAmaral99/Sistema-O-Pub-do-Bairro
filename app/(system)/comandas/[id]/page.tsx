@@ -1,29 +1,28 @@
-import Image from "next/image";
 import { notFound } from "next/navigation";
-import { CircleAlert, Grid2X2, ImageIcon, MinusCircle, Send, ShoppingCart, XCircle } from "lucide-react";
-import { addItemAction, cancelCommandAction, removeItemAction, sendKitchenAction, updateCommandPriorityAction, updateCommandTablesAction } from "@/app/system-actions";
+import { CircleAlert, Grid2X2, MinusCircle, Send, ShoppingCart, XCircle } from "lucide-react";
+import { cancelCommandAction, removeItemAction, sendKitchenAction, updateCommandPriorityAction, updateCommandTablesAction } from "@/app/system-actions";
 import { PriorityInfo } from "@/components/priority-info";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
 import { PaymentForm } from "@/components/payment-form";
+import { CommandProductPicker, type CommandProduct } from "@/components/command-product-picker";
 
-type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ erro?: string; busca?: string }> };
+type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ erro?: string }> };
 
 export default async function CommandDetailPage({ params, searchParams }: Params) {
   await requirePermission("COMMANDS");
   const commandId = Number((await params).id);
-  const { erro, busca = "" } = await searchParams;
+  const { erro } = await searchParams;
   const commandResult = await query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; notes: string | null; status: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.notes,c.status,c.priority,c.priority_note FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1`, [commandId]);
   const command = commandResult.rows[0]; if (!command) notFound();
   const [items, products, tables] = await Promise.all([
     query<{ id: number; product_name: string; quantity: number|string; unit_price_cents: number; status: string; destination: string;display_unit:string }>("SELECT id,product_name,quantity,unit_price_cents,status,destination,display_unit FROM order_items WHERE command_id=$1 ORDER BY created_at DESC", [commandId]),
-    query<{ id: number; name: string; category: string; price_cents: number; stock_quantity: number|string; stock_unlimited:boolean; stock_shared:boolean; destination: string; sale_unit:string; stock_per_sale_unit:number|string; has_image:boolean; image_updated_at:string|null }>(`SELECT p.id,p.name,p.category,p.price_cents,sp.stock_quantity,sp.unlimited AS stock_unlimited,
-      EXISTS(SELECT 1 FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id AND linked.id<>p.id) AS stock_shared,
-      p.destination,p.sale_unit,p.stock_per_sale_unit,(p.image_data IS NOT NULL) AS has_image,p.image_updated_at FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.active=TRUE AND ($1='' OR p.name ILIKE '%'||$1||'%' OR p.category ILIKE '%'||$1||'%') ORDER BY p.category,p.name LIMIT 80`, [busca]),
-    query<{id:number;number:number;label:string;selected:boolean;occupied_by:number|null}>(`SELECT bt.id,bt.number,COALESCE(bt.label,'Mesa '||bt.number) AS label,
-      EXISTS(SELECT 1 FROM command_tables current_tables WHERE current_tables.command_id=$1 AND current_tables.table_id=bt.id) AS selected,
-      (SELECT other.command_number FROM command_tables occupied JOIN commands other ON other.id=occupied.command_id WHERE occupied.table_id=bt.id AND other.status='OPEN' AND other.id<>$1 LIMIT 1) AS occupied_by
+    query<CommandProduct>(`SELECT p.id,p.name,p.category,p.price_cents,sp.stock_quantity,sp.unlimited AS stock_unlimited,sp.stock_kind,
+      EXISTS(SELECT 1 FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id AND linked.id<>p.id AND linked.deleted_at IS NULL) AS stock_shared,
+      p.stock_per_sale_unit,(p.image_data IS NOT NULL) AS has_image,p.image_updated_at FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.active=TRUE AND p.deleted_at IS NULL AND p.name NOT ILIKE '%ESTOQUE%' ORDER BY p.category,p.name LIMIT 500`),
+    query<{id:number;number:number;label:string;selected:boolean}>(`SELECT bt.id,bt.number,COALESCE(bt.label,'Mesa '||bt.number) AS label,
+      EXISTS(SELECT 1 FROM command_tables current_tables WHERE current_tables.command_id=$1 AND current_tables.table_id=bt.id) AS selected
       FROM bar_tables bt WHERE bt.active=TRUE OR EXISTS(SELECT 1 FROM command_tables current_tables WHERE current_tables.command_id=$1 AND current_tables.table_id=bt.id) ORDER BY bt.number`,[commandId]),
   ]);
   const activeItems = items.rows.filter((item) => item.status !== "CANCELLED");
@@ -36,19 +35,11 @@ export default async function CommandDetailPage({ params, searchParams }: Params
       {erro && <div className="alert alert-error">{erro}</div>}
       <div className="split-layout">
         <section className="card">
-          <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Adicionar produtos</h3><p>{products.rows.length} produto(s) encontrado(s)</p></div></div>
-          <form method="get" className="actions" style={{ marginBottom: 16 }}><input className="input" name="busca" defaultValue={busca} placeholder="Buscar produto ou categoria" style={{ maxWidth: 340 }}/><button className="btn btn-light" type="submit">Buscar</button></form>
-          <div className="product-list">
-            {products.rows.map((product) => { const availableUnits=product.stock_unlimited?undefined:String(Math.floor(Number(product.stock_quantity)/Number(product.stock_per_sale_unit))); return <form action={addItemAction} className="product-button product-add-card" key={product.id}>
-              <input type="hidden" name="commandId" value={commandId}/><input type="hidden" name="productId" value={product.id}/>
-              {product.has_image ? <Image className="command-product-photo" src={`/api/products/${product.id}/image?v=${encodeURIComponent(product.image_updated_at ?? "1")}`} alt={product.name} width={220} height={120} unoptimized/> : <span className="command-product-photo command-product-photo-empty"><ImageIcon size={24}/></span>}
-              <strong>{product.name}</strong><small>{product.category} · {product.stock_unlimited?"Disponível sem limite":`Disponível ${availableUnits} un.`}{product.stock_shared?" · Estoque compartilhado":""}</small><div className="money" style={{ marginTop: 10 }}>{formatMoney(product.price_cents)}</div>
-              <div className="product-quantity-row"><input className="input" aria-label={`Quantidade de ${product.name}`} name="quantity" type="number" min="1" max={availableUnits} step="1" defaultValue="1" required/><button className="btn btn-primary btn-small" type="submit" disabled={command.status !== "OPEN" || (!product.stock_unlimited&&Number(product.stock_quantity) < Number(product.stock_per_sale_unit))}>Adicionar</button></div>
-            </form>;})}
-          </div>
+          <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Adicionar produtos</h3><p>Digite parte do nome para filtrar imediatamente.</p></div></div>
+          <CommandProductPicker products={products.rows} commandId={commandId} commandOpen={command.status==="OPEN"}/>
         </section>
         <aside className={`card sticky-card ${command.priority ? "priority-alert" : ""}`}>
-          {command.status === "OPEN"&&<details className="command-tables-editor"><summary><Grid2X2 size={17}/> Mesas desta comanda: {command.table_display}</summary><form action={updateCommandTablesAction} className="form-stack"><input type="hidden" name="commandId" value={command.id}/><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className={`table-choice ${table.occupied_by?"table-choice-disabled":""}`} key={table.id}><input type="checkbox" name="tableIds" value={table.id} defaultChecked={table.selected} disabled={Boolean(table.occupied_by)}/><span><strong>{table.label}</strong><small>{table.occupied_by?`Em uso na comanda #${table.occupied_by}`:`Mesa ${table.number}`}</small></span></label>)}</div><button className="btn btn-primary btn-small" type="submit">Salvar mesas da comanda</button></form><div className="divider"/></details>}
+          {command.status === "OPEN"&&<details className="command-tables-editor"><summary><Grid2X2 size={17}/> Mesas desta comanda: {command.table_display}</summary><form action={updateCommandTablesAction} className="form-stack"><input type="hidden" name="commandId" value={command.id}/><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className="table-choice" key={table.id}><input type="checkbox" name="tableIds" value={table.id} defaultChecked={table.selected}/><span><strong>{table.label}</strong><small>Mesa {table.number}</small></span></label>)}</div><button className="btn btn-primary btn-small" type="submit">Salvar mesas da comanda</button></form><div className="divider"/></details>}
           {command.status === "OPEN" && <><h3><CircleAlert size={17}/> Prioridade da comanda/mesa</h3>
             {command.priority ? <div className="form-stack priority-control"><div className="priority-current"><strong>Prioridade ativa</strong><PriorityInfo note={command.priority_note}/><p>{command.priority_note}</p></div><form action={updateCommandPriorityAction} className="form-stack"><input type="hidden" name="commandId" value={command.id}/><input type="hidden" name="priority" value="true"/><div className="field"><label>Motivo ou observação</label><textarea className="textarea" name="priorityNote" minLength={3} defaultValue={command.priority_note??""} rows={3} required/></div><button className="btn btn-primary btn-small" type="submit">Atualizar prioridade</button></form><form action={updateCommandPriorityAction}><input type="hidden" name="commandId" value={command.id}/><input type="hidden" name="priority" value="false"/><button className="btn btn-light btn-small" type="submit">Remover prioridade</button></form></div> : <form action={updateCommandPriorityAction} className="form-stack priority-control"><input type="hidden" name="commandId" value={command.id}/><input type="hidden" name="priority" value="true"/><div className="field"><label>Motivo ou observação</label><textarea className="textarea" name="priorityNote" minLength={3} rows={3} placeholder="Ex.: cliente aguardando item atrasado" required/></div><button className="btn btn-danger" type="submit"><CircleAlert size={16}/> Marcar como prioridade</button></form>}
             <div className="divider"/></>}

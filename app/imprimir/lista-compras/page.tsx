@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function ShoppingListPrintPage() {
   await requirePermission("STOCK");
   const products = await query<{ id:number;name:string;category:string;stock_quantity:number|string;min_stock:number|string;sale_unit:string }>(`SELECT sp.id,STRING_AGG(p.name,' + ' ORDER BY p.name) AS name,STRING_AGG(DISTINCT p.category,', ' ORDER BY p.category) AS category,sp.stock_quantity,sp.min_stock,sp.sale_unit
-    FROM stock_pools sp JOIN products p ON p.stock_pool_id=sp.id AND p.active=TRUE WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock
+    FROM stock_pools sp JOIN products p ON p.stock_pool_id=sp.id AND p.active=TRUE AND p.deleted_at IS NULL WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock
     GROUP BY sp.id ORDER BY MIN(p.category),MIN(p.name)`);
   return <main className="print-page"><PrintActions/><header className="print-title"><BrandLogo className="print-logo"/><h1>O Pub do Bairro</h1><strong>LISTA DE COMPRAS PARA REPOSIÇÃO</strong><p>Gerada em {formatDateTime(new Date())}</p></header><div className="divider"/>
     {products.rows.length===0?<p style={{textAlign:"center"}}>Nenhum produto está no estoque mínimo.</p>:<table><thead><tr><th>Produto</th><th>Categoria</th><th>Saldo atual</th><th>Estoque mínimo</th><th>Comprar</th></tr></thead><tbody>{products.rows.map((product)=><tr key={product.id}><td><strong>{product.name}</strong></td><td>{product.category}</td><td>{formatQuantity(product.stock_quantity,product.sale_unit)}</td><td>{formatQuantity(product.min_stock,product.sale_unit)}</td><td style={{minWidth:180}}>________________</td></tr>)}</tbody></table>}

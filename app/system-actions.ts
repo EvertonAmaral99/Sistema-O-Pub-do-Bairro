@@ -103,8 +103,6 @@ export async function openCommandAction(formData: FormData) {
     commandId = await transaction(async (client) => {
       const tables = await client.query<{id:number;label:string;active:boolean}>("SELECT id,COALESCE(label,'Mesa '||number) AS label,active FROM bar_tables WHERE id=ANY($1::bigint[]) ORDER BY number FOR UPDATE",[tableIds]);
       if(tables.rows.length!==tableIds.length||tables.rows.some((table)=>!table.active)) throw new Error("Uma das mesas selecionadas está indisponível.");
-      const occupied=await client.query<{label:string;command_number:number}>(`SELECT COALESCE(bt.label,'Mesa '||bt.number) AS label,c.command_number FROM command_tables ct JOIN commands c ON c.id=ct.command_id JOIN bar_tables bt ON bt.id=ct.table_id WHERE ct.table_id=ANY($1::bigint[]) AND c.status='OPEN' FOR UPDATE OF c`,[tableIds]);
-      if(occupied.rows.length>0) throw new Error(`${occupied.rows.map((row)=>row.label).join(", ")} já está em outra comanda aberta.`);
       const primaryTableId=tables.rows[0].id;
       const created = await client.query<{ id:number }>("INSERT INTO commands (command_number,table_id,customer_name,opened_by,notes) VALUES ($1,$2,$3,$4,$5) RETURNING id", [commandNumber, primaryTableId, customerName, user.id, notes]);
       for(const table of tables.rows) await client.query("INSERT INTO command_tables (command_id,table_id) VALUES ($1,$2)",[created.rows[0].id,table.id]);
@@ -130,8 +128,6 @@ export async function updateCommandTablesAction(formData:FormData){
       if(!command.rows[0]) throw new Error("A comanda não está aberta.");
       const tables=await client.query<{id:number;label:string;active:boolean}>("SELECT id,COALESCE(label,'Mesa '||number) AS label,active FROM bar_tables WHERE id=ANY($1::bigint[]) ORDER BY number FOR UPDATE",[tableIds]);
       if(tables.rows.length!==tableIds.length||tables.rows.some((table)=>!table.active)) throw new Error("Uma das mesas selecionadas está indisponível.");
-      const occupied=await client.query<{label:string;command_number:number}>(`SELECT COALESCE(bt.label,'Mesa '||bt.number) AS label,c.command_number FROM command_tables ct JOIN commands c ON c.id=ct.command_id JOIN bar_tables bt ON bt.id=ct.table_id WHERE ct.table_id=ANY($1::bigint[]) AND c.status='OPEN' AND c.id<>$2 FOR UPDATE OF c`,[tableIds,commandId]);
-      if(occupied.rows.length>0) throw new Error(`${occupied.rows.map((row)=>row.label).join(", ")} já está em outra comanda aberta.`);
       await client.query("DELETE FROM command_tables WHERE command_id=$1",[commandId]);
       for(const table of tables.rows) await client.query("INSERT INTO command_tables (command_id,table_id) VALUES ($1,$2)",[commandId,table.id]);
       await client.query("UPDATE commands SET table_id=$1 WHERE id=$2",[tables.rows[0].id,commandId]);
@@ -153,7 +149,7 @@ export async function addItemAction(formData: FormData) {
     await transaction(async (client) => {
       const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda fechada.");
-      const product = await client.query<{ name:string;price_cents:number;stock_pool_id:number;stock_quantity:number|string;stock_unlimited:boolean;destination:string;sale_unit:string;stock_per_sale_unit:number|string }>("SELECT p.name,p.price_cents,p.stock_pool_id,sp.stock_quantity,sp.unlimited AS stock_unlimited,p.destination,p.sale_unit,p.stock_per_sale_unit FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.active=TRUE FOR UPDATE OF p,sp", [productId]);
+      const product = await client.query<{ name:string;price_cents:number;stock_pool_id:number;stock_quantity:number|string;stock_unlimited:boolean;destination:string;sale_unit:string;stock_per_sale_unit:number|string }>("SELECT p.name,p.price_cents,p.stock_pool_id,sp.stock_quantity,sp.unlimited AS stock_unlimited,p.destination,p.sale_unit,p.stock_per_sale_unit FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.active=TRUE AND p.deleted_at IS NULL AND p.name NOT ILIKE '%ESTOQUE%' FOR UPDATE OF p,sp", [productId]);
       const item = product.rows[0];
       if (!item) throw new Error("Produto indisponível.");
       const factor = Number(item.stock_per_sale_unit);
@@ -201,9 +197,10 @@ export async function removeItemAction(formData: FormData) {
 export async function updateCommandPriorityAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandId = positiveId(formData.get("commandId"));
+  const returnTo = formData.get("returnTo") === "/painel" ? "/painel" : `/comandas/${commandId}`;
   const priority = formData.get("priority") === "true";
   const note = String(formData.get("priorityNote") ?? "").trim();
-  if (priority && note.length < 3) fail(`/comandas/${commandId}`, "Informe o motivo da prioridade.");
+  if (priority && note.length < 3) fail(returnTo, "Informe o motivo da prioridade.");
   try {
     await transaction(async (client) => {
       const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
@@ -211,12 +208,12 @@ export async function updateCommandPriorityAction(formData: FormData) {
       await client.query("UPDATE commands SET priority=$1,priority_note=$2,priority_updated_at=NOW(),priority_updated_by=$3 WHERE id=$4", [priority, priority ? note : null, user.id, commandId]);
       await auditLog({ userId:user.id, action:priority ? "COMMAND_PRIORITY_SET" : "COMMAND_PRIORITY_REMOVED", entityType:"COMMAND", entityId:commandId, description:priority ? `Marcou a comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}, como prioridade. Motivo: ${note}` : `Removeu a prioridade da comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}.`, metadata:{ commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, priority, note:priority ? note : null } }, client);
     });
-  } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível alterar a prioridade."); }
+  } catch (error) { fail(returnTo, error instanceof Error ? error.message : "Não foi possível alterar a prioridade."); }
   revalidatePath(`/comandas/${commandId}`);
   revalidatePath("/comandas");
   revalidatePath("/cozinha");
   revalidatePath("/painel");
-  redirect(`/comandas/${commandId}`);
+  redirect(returnTo);
 }
 
 export async function sendKitchenAction(formData: FormData) {
@@ -326,17 +323,23 @@ export async function createProductAction(formData: FormData) {
   const name = productName(formData.get("name"));
   const category = String(formData.get("category") ?? "").trim();
   const destination = String(formData.get("destination") ?? "DIRECT");
-  const saleUnit = String(formData.get("saleUnit") ?? "UNIT");
+  const stockMode = String(formData.get("stockMode") ?? "OWN");
+  const isDraft = stockMode === "DRAFT_BEER" || stockMode === "DRAFT_WINE";
+  const saleUnit = isDraft ? "L" : String(formData.get("saleUnit") ?? "UNIT");
   const price = cents(formData.get("price"));
-  const stockLinkEnabled = formData.get("stockLinkEnabled") === "true";
-  const sourceProductId = stockLinkEnabled ? positiveId(formData.get("stockSourceProductId")) : null;
-  const unlimited = !stockLinkEnabled && formData.get("unlimitedStock") === "on";
+  const unlimited = stockMode === "UNLIMITED";
   const stock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("stock")));
   const minStock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("minStock")));
-  if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail("/produtos", "Preencha os dados do produto.");
+  if (!name || !category || !["OWN","DRAFT_BEER","DRAFT_WINE","UNLIMITED"].includes(stockMode) || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail("/produtos", "Preencha os dados do produto.");
   let image:null|{data:Buffer;mime:string}=null;
   let stockPerSaleUnit = 1;
-  try { stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit); }
+  try {
+    if(isDraft){
+      const milliliters=Math.trunc(numberValue(formData.get("servingMilliliters")));
+      if(![300,500].includes(milliliters)) throw new Error("Escolha o tamanho de 300 ml ou 500 ml.");
+      stockPerSaleUnit=milliliters/1000;
+    }else stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit);
+  }
   catch(error) { fail("/produtos", error instanceof Error ? error.message : "Revise o controle de estoque."); }
   try { image=await readProductImage(formData.get("image")); }
   catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível processar a foto."); }
@@ -346,23 +349,22 @@ export async function createProductAction(formData: FormData) {
       let effectiveStock=stock;
       let effectiveMinStock=minStock;
       let effectiveUnlimited=unlimited;
-      let sourceName:string|null=null;
-      if(sourceProductId){
-        const source=await client.query<{stock_pool_id:number;name:string;sale_unit:string;stock_quantity:number|string;min_stock:number|string;unlimited:boolean}>("SELECT p.stock_pool_id,p.name,sp.sale_unit,sp.stock_quantity,sp.min_stock,sp.unlimited FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 FOR SHARE OF p,sp",[sourceProductId]);
-        if(!source.rows[0]) throw new Error("Produto escolhido para compartilhar o estoque não foi encontrado.");
-        if(source.rows[0].sale_unit!==saleUnit) throw new Error("Os produtos vinculados devem usar a mesma forma de controle de estoque.");
-        stockPoolId=source.rows[0].stock_pool_id;
-        sourceName=source.rows[0].name;
-        effectiveStock=Number(source.rows[0].stock_quantity);
-        effectiveMinStock=Number(source.rows[0].min_stock);
-        effectiveUnlimited=source.rows[0].unlimited;
+      let stockDescription:string;
+      if(isDraft){
+        const pool=await client.query<{id:number;name:string;stock_quantity:number|string;min_stock:number|string}>("SELECT id,name,stock_quantity,min_stock FROM stock_pools WHERE stock_kind=$1 FOR UPDATE",[stockMode]);
+        if(!pool.rows[0]) throw new Error("O estoque de chopp não foi encontrado.");
+        stockPoolId=pool.rows[0].id;
+        effectiveStock=Number(pool.rows[0].stock_quantity);
+        effectiveMinStock=Number(pool.rows[0].min_stock);
+        effectiveUnlimited=false;
+        stockDescription=` Usa ${pool.rows[0].name}; baixa de ${stockPerSaleUnit} L por unidade.`;
       }else{
         const pool=await client.query<{id:number}>("INSERT INTO stock_pools (name,sale_unit,stock_quantity,min_stock,unlimited) VALUES ($1,$2,$3,$4,$5) RETURNING id",[name,saleUnit,stock,minStock,unlimited]);
         stockPoolId=pool.rows[0].id;
+        stockDescription=effectiveUnlimited?" Estoque ilimitado.":` Estoque inicial: ${effectiveStock} ${saleUnit}; mínimo: ${effectiveMinStock} ${saleUnit}.`;
       }
       const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,stock_per_sale_unit,stock_pool_id,image_data,image_mime,image_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $10::bytea IS NULL THEN NULL ELSE NOW() END) RETURNING id", [name, category, price, effectiveStock, effectiveMinStock, destination, saleUnit, stockPerSaleUnit, stockPoolId, image?.data??null, image?.mime??null]);
-      const stockDescription=sourceName?` Estoque compartilhado com ${sourceName}.`:effectiveUnlimited?" Estoque ilimitado.":` Estoque inicial: ${effectiveStock} ${saleUnit}; mínimo: ${effectiveMinStock} ${saleUnit}.`;
-      await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.${stockDescription}`, metadata:{ category, stock:effectiveStock, minStock:effectiveMinStock, unlimited:effectiveUnlimited, stockPoolId, sourceProductId, sourceName, destination, saleUnit, stockPerSaleUnit, hasImage:Boolean(image) } }, client);
+      await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.${stockDescription}`, metadata:{ category, stock:effectiveStock, minStock:effectiveMinStock, unlimited:effectiveUnlimited, stockMode, stockPoolId, destination, saleUnit, stockPerSaleUnit, hasImage:Boolean(image) } }, client);
     });
   } catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível cadastrar o produto."); }
   revalidatePath("/produtos");
@@ -376,56 +378,57 @@ export async function updateProductAction(formData: FormData) {
   const name = productName(formData.get("name"));
   const category = String(formData.get("category") ?? "").trim();
   const destination = String(formData.get("destination") ?? "DIRECT");
-  const saleUnit = String(formData.get("saleUnit") ?? "UNIT");
+  const stockMode = String(formData.get("stockMode") ?? "OWN");
+  const isDraft = stockMode === "DRAFT_BEER" || stockMode === "DRAFT_WINE";
+  const saleUnit = isDraft ? "L" : String(formData.get("saleUnit") ?? "UNIT");
   const price = cents(formData.get("price"));
-  const stockLinkEnabled = formData.get("stockLinkEnabled") === "true";
-  const sourceProductId = stockLinkEnabled ? positiveId(formData.get("stockSourceProductId")) : null;
-  const unlimited = !stockLinkEnabled && formData.get("unlimitedStock") === "on";
+  const unlimited = stockMode === "UNLIMITED";
   const stock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("stock")));
   const minStock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("minStock")));
   const active = formData.get("active") === "on";
   const removeImage = formData.get("removeImage") === "on";
-  if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail(`/produtos/${productId}`, "Revise os dados do produto.");
+  if (!name || !category || !["OWN","DRAFT_BEER","DRAFT_WINE","UNLIMITED"].includes(stockMode) || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail(`/produtos/${productId}`, "Revise os dados do produto.");
   let image:null|{data:Buffer;mime:string}=null;
   let stockPerSaleUnit = 1;
-  try { stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit); }
+  try {
+    if(isDraft){
+      const milliliters=Math.trunc(numberValue(formData.get("servingMilliliters")));
+      if(![300,500].includes(milliliters)) throw new Error("Escolha o tamanho de 300 ml ou 500 ml.");
+      stockPerSaleUnit=milliliters/1000;
+    }else stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit);
+  }
   catch(error) { fail(`/produtos/${productId}`, error instanceof Error ? error.message : "Revise o controle de estoque."); }
   try { image=await readProductImage(formData.get("image")); }
   catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível processar a foto."); }
   try {
     await transaction(async (client) => {
-      const current = await client.query<{name:string;price_cents:number;stock_per_sale_unit:number|string;stock_pool_id:number;stock_quantity:number|string;min_stock:number|string;stock_unlimited:boolean;stock_sale_unit:string;pool_members:string}>(`SELECT p.name,p.price_cents,p.stock_per_sale_unit,p.stock_pool_id,sp.stock_quantity,sp.min_stock,sp.unlimited AS stock_unlimited,sp.sale_unit AS stock_sale_unit,
-        (SELECT COUNT(*)::text FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id) AS pool_members
-        FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 FOR UPDATE OF p,sp`,[productId]);
+      const current = await client.query<{name:string;price_cents:number;stock_per_sale_unit:number|string;stock_pool_id:number;stock_kind:string|null;stock_quantity:number|string;min_stock:number|string;stock_unlimited:boolean;stock_sale_unit:string;pool_members:string}>(`SELECT p.name,p.price_cents,p.stock_per_sale_unit,p.stock_pool_id,sp.stock_kind,sp.stock_quantity,sp.min_stock,sp.unlimited AS stock_unlimited,sp.sale_unit AS stock_sale_unit,
+        (SELECT COUNT(*)::text FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id AND linked.deleted_at IS NULL) AS pool_members
+        FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.deleted_at IS NULL FOR UPDATE OF p,sp`,[productId]);
       if(!current.rows[0]) throw new Error("Produto não encontrado.");
       const old=current.rows[0];
       let stockPoolId=old.stock_pool_id;
       let effectiveStock=stock;
       let effectiveMinStock=minStock;
       let effectiveUnlimited=unlimited;
-      let sourceName:string|null=null;
+      let stockDescription:string;
       let updatePool=true;
-      if(sourceProductId){
-        if(sourceProductId===productId) throw new Error("Escolha outro produto para compartilhar o estoque.");
-        const source=await client.query<{stock_pool_id:number;name:string;sale_unit:string;stock_quantity:number|string;min_stock:number|string;unlimited:boolean}>("SELECT p.stock_pool_id,p.name,sp.sale_unit,sp.stock_quantity,sp.min_stock,sp.unlimited FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 FOR SHARE OF p,sp",[sourceProductId]);
-        if(!source.rows[0]) throw new Error("Produto escolhido para compartilhar o estoque não foi encontrado.");
-        if(source.rows[0].sale_unit!==saleUnit) throw new Error("Os produtos vinculados devem usar a mesma forma de controle de estoque.");
-        stockPoolId=source.rows[0].stock_pool_id;
-        sourceName=source.rows[0].name;
-        if(stockPoolId!==old.stock_pool_id){
-          effectiveStock=Number(source.rows[0].stock_quantity);
-          effectiveMinStock=Number(source.rows[0].min_stock);
-          effectiveUnlimited=source.rows[0].unlimited;
-          updatePool=false;
-        }else{
-          effectiveUnlimited=formData.get("unlimitedStock") === "on";
-          effectiveStock=effectiveUnlimited?0:Math.max(0,quantityValue(formData.get("stock")));
-          effectiveMinStock=effectiveUnlimited?0:Math.max(0,quantityValue(formData.get("minStock")));
-        }
-      }else if(Number(old.pool_members)>1){
+      if(isDraft){
+        const pool=await client.query<{id:number;name:string;stock_quantity:number|string;min_stock:number|string}>("SELECT id,name,stock_quantity,min_stock FROM stock_pools WHERE stock_kind=$1 FOR UPDATE",[stockMode]);
+        if(!pool.rows[0]) throw new Error("O estoque de chopp não foi encontrado.");
+        stockPoolId=pool.rows[0].id;
+        effectiveStock=Number(pool.rows[0].stock_quantity);
+        effectiveMinStock=Number(pool.rows[0].min_stock);
+        effectiveUnlimited=false;
+        updatePool=false;
+        stockDescription=` Usa ${pool.rows[0].name}; baixa de ${stockPerSaleUnit} L por unidade.`;
+      }else if(Number(old.pool_members)>1||old.stock_kind){
         const pool=await client.query<{id:number}>("INSERT INTO stock_pools (name,sale_unit,stock_quantity,min_stock,unlimited) VALUES ($1,$2,$3,$4,$5) RETURNING id",[name,saleUnit,stock,minStock,unlimited]);
         stockPoolId=pool.rows[0].id;
         updatePool=false;
+        stockDescription=effectiveUnlimited?" Estoque ilimitado.":` Estoque ${effectiveStock} ${saleUnit}; mínimo ${effectiveMinStock} ${saleUnit}.`;
+      }else{
+        stockDescription=effectiveUnlimited?" Estoque ilimitado.":` Estoque ${effectiveStock} ${saleUnit}; mínimo ${effectiveMinStock} ${saleUnit}.`;
       }
       if(updatePool){
         if(Number(old.pool_members)>1&&old.stock_sale_unit!==saleUnit) throw new Error("Separe o estoque antes de alterar a forma de controle deste produto.");
@@ -438,12 +441,47 @@ export async function updateProductAction(formData: FormData) {
         image_mime=CASE WHEN $11::boolean THEN NULL WHEN $12::bytea IS NOT NULL THEN $13 ELSE image_mime END,
         image_updated_at=CASE WHEN $11::boolean THEN NOW() WHEN $12::bytea IS NOT NULL THEN NOW() ELSE image_updated_at END,updated_at=NOW() WHERE id=$14`,
         [name,category,price,effectiveStock,effectiveMinStock,destination,saleUnit,stockPerSaleUnit,stockPoolId,active,removeImage,image?.data??null,image?.mime??null,productId]);
-      const stockDescription=sourceName?` Estoque compartilhado com ${sourceName}.`:effectiveUnlimited?" Estoque ilimitado.":` Estoque ${effectiveStock} ${saleUnit}; mínimo ${effectiveMinStock} ${saleUnit}.`;
-      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}.${stockDescription}`,metadata:{name,category,price,stock:effectiveStock,minStock:effectiveMinStock,unlimited:effectiveUnlimited,stockPoolId,sourceProductId,sourceName,destination,saleUnit,stockPerSaleUnit,previousStockFactor:old.stock_per_sale_unit,active,imageChanged:Boolean(image)||removeImage}},client);
+      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}.${stockDescription}`,metadata:{name,category,price,stock:effectiveStock,minStock:effectiveMinStock,unlimited:effectiveUnlimited,stockMode,stockPoolId,destination,saleUnit,stockPerSaleUnit,previousStockFactor:old.stock_per_sale_unit,active,imageChanged:Boolean(image)||removeImage}},client);
     });
   } catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível atualizar o produto."); }
   revalidatePath("/produtos"); revalidatePath(`/produtos/${productId}`); revalidatePath("/estoque"); revalidatePath("/comandas");
   redirect("/produtos");
+}
+
+export async function deleteProductAction(formData: FormData) {
+  const user = await requireRole(["ADMIN","MANAGER"]);
+  const productId = positiveId(formData.get("productId"));
+  try {
+    await transaction(async (client) => {
+      const product=await client.query<{name:string}>("SELECT name FROM products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",[productId]);
+      if(!product.rows[0]) throw new Error("Produto não encontrado ou já excluído.");
+      await client.query("UPDATE products SET active=FALSE,deleted_at=NOW(),updated_at=NOW() WHERE id=$1",[productId]);
+      await auditLog({userId:user.id,action:"PRODUCT_DELETED",entityType:"PRODUCT",entityId:productId,description:`Excluiu o cadastro do produto ${product.rows[0].name}. O histórico anterior foi preservado.`,metadata:{productName:product.rows[0].name}},client);
+    });
+  } catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível excluir o produto."); }
+  revalidatePath("/produtos"); revalidatePath("/estoque"); revalidatePath("/comandas"); revalidatePath("/painel");
+  redirect("/produtos");
+}
+
+export async function addDraftKegAction(formData: FormData) {
+  const user = await requirePermission("STOCK");
+  const stockKind=String(formData.get("stockKind")??"");
+  const kegCount=Math.trunc(numberValue(formData.get("kegCount"),1));
+  if(!["DRAFT_BEER","DRAFT_WINE"].includes(stockKind)||kegCount<1||kegCount>20) fail("/estoque","Informe de 1 a 20 galões.");
+  try{
+    await transaction(async(client)=>{
+      const pool=await client.query<{id:number;name:string;stock_quantity:number|string}>("SELECT id,name,stock_quantity FROM stock_pools WHERE stock_kind=$1 FOR UPDATE",[stockKind]);
+      if(!pool.rows[0]) throw new Error("Estoque de chopp não encontrado.");
+      const added=kegCount*50;
+      const newStock=Number(pool.rows[0].stock_quantity)+added;
+      await client.query("UPDATE stock_pools SET stock_quantity=$1,updated_at=NOW() WHERE id=$2",[newStock,pool.rows[0].id]);
+      const product=await client.query<{id:number}>("SELECT id FROM products WHERE stock_pool_id=$1 AND deleted_at IS NULL ORDER BY id LIMIT 1",[pool.rows[0].id]);
+      if(product.rows[0]) await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,user_id) VALUES ($1,$2,$3,'KEG_ADDED',$4)",[product.rows[0].id,pool.rows[0].id,added,user.id]);
+      await auditLog({userId:user.id,action:"DRAFT_KEG_ADDED",entityType:"STOCK_POOL",entityId:pool.rows[0].id,description:`Adicionou ${kegCount} galão(ões) de 50 L ao ${pool.rows[0].name}. Novo saldo: ${newStock} L.`,metadata:{stockKind,kegCount,addedLiters:added,previousStock:pool.rows[0].stock_quantity,newStock}},client);
+    });
+  }catch(error){fail("/estoque",error instanceof Error?error.message:"Não foi possível adicionar o galão.");}
+  revalidatePath("/estoque"); revalidatePath("/produtos"); revalidatePath("/comandas"); revalidatePath("/painel");
+  redirect("/estoque");
 }
 
 export async function adjustStockAction(formData: FormData) {
@@ -453,14 +491,14 @@ export async function adjustStockAction(formData: FormData) {
   if (quantity === 0) fail("/estoque", "Informe uma quantidade diferente de zero.");
   try {
     await transaction(async (client) => {
-      const current = await client.query<{ name:string;stock_pool_id:number;stock_quantity:number|string;unlimited:boolean }>("SELECT p.name,p.stock_pool_id,sp.stock_quantity,sp.unlimited FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 FOR UPDATE OF p,sp", [productId]);
+      const current = await client.query<{ name:string;stock_pool_id:number;stock_quantity:number|string;unlimited:boolean }>("SELECT p.name,p.stock_pool_id,sp.stock_quantity,sp.unlimited FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.deleted_at IS NULL FOR UPDATE OF p,sp", [productId]);
       if (!current.rows[0]) throw new Error("Produto não encontrado.");
       if (current.rows[0].unlimited) throw new Error("Produtos com estoque ilimitado não recebem ajuste de saldo.");
       if (Number(current.rows[0].stock_quantity) + quantity < 0) throw new Error("O ajuste deixaria o estoque negativo.");
       const newStock = Number(current.rows[0].stock_quantity) + quantity;
       await client.query("UPDATE stock_pools SET stock_quantity=$1,updated_at=NOW() WHERE id=$2", [newStock, current.rows[0].stock_pool_id]);
       await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,user_id) VALUES ($1,$2,$3,'MANUAL_ADJUSTMENT',$4)", [productId, current.rows[0].stock_pool_id, quantity, user.id]);
-      await auditLog({ userId:user.id, action:"STOCK_ADJUSTED", entityType:"STOCK_POOL", entityId:current.rows[0].stock_pool_id, description:`Ajustou o estoque compartilhado de ${current.rows[0].name} em ${quantity > 0 ? "+" : ""}${quantity}. Novo saldo: ${newStock}.`, metadata:{ productId,stockPoolId:current.rows[0].stock_pool_id,quantity,previousStock:current.rows[0].stock_quantity,newStock } }, client);
+      await auditLog({ userId:user.id, action:"STOCK_ADJUSTED", entityType:"STOCK_POOL", entityId:current.rows[0].stock_pool_id, description:`Ajustou o estoque de ${current.rows[0].name} em ${quantity > 0 ? "+" : ""}${quantity}. Novo saldo: ${newStock}.`, metadata:{ productId,stockPoolId:current.rows[0].stock_pool_id,quantity,previousStock:current.rows[0].stock_quantity,newStock } }, client);
     });
   } catch (error) { fail("/estoque", error instanceof Error ? error.message : "Não foi possível ajustar o estoque."); }
   revalidatePath("/estoque");

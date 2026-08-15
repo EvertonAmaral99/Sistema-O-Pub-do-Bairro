@@ -11,10 +11,7 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
   await requirePermission("COMMANDS");
   const { erro } = await searchParams;
   const [tables, commands] = await Promise.all([
-    query<{ id: number; number: number; label: string; occupied_by:number|null }>(`SELECT bt.id,bt.number,COALESCE(bt.label,'Mesa '||bt.number) AS label,
-      MAX(c.command_number) FILTER (WHERE c.status='OPEN') AS occupied_by
-      FROM bar_tables bt LEFT JOIN command_tables ct ON ct.table_id=bt.id LEFT JOIN commands c ON c.id=ct.command_id AND c.status='OPEN'
-      WHERE bt.active=TRUE GROUP BY bt.id ORDER BY bt.number`),
+    query<{ id: number; number: number; label: string }>(`SELECT bt.id,bt.number,COALESCE(bt.label,'Mesa '||bt.number) AS label FROM bar_tables bt WHERE bt.active=TRUE ORDER BY bt.number`),
     query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; items: string; total: string; priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
       COALESCE(SUM(oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS items,
       COALESCE(SUM(oi.unit_price_cents*oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS total
@@ -32,17 +29,17 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
           <div className="field"><label>Número da comanda</label><input className="input" name="commandNumber" type="number" min="1" required autoFocus /></div>
           <div className="field"><label>Nome do cliente (opcional)</label><input className="input" name="customerName" /></div>
           <div className="field"><label>Observação (opcional)</label><input className="input" name="notes" /></div>
-          <div className="field span-2"><label>Mesas desta comanda</label><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className={`table-choice ${table.occupied_by?"table-choice-disabled":""}`} key={table.id}><input type="checkbox" name="tableIds" value={table.id} disabled={Boolean(table.occupied_by)}/><span><strong>{table.label}</strong><small>{table.occupied_by?`Em uso na comanda #${table.occupied_by}`:`Mesa ${table.number} disponível`}</small></span></label>)}</div><small>Marque uma mesa ou várias mesas que ficarão sob a mesma comanda.</small></div>
+          <div className="field span-2"><label>Mesas desta comanda</label><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className="table-choice" key={table.id}><input type="checkbox" name="tableIds" value={table.id}/><span><strong>{table.label}</strong><small>Mesa {table.number}</small></span></label>)}</div><small>Marque uma mesa ou várias mesas. A mesma mesa pode estar em outras comandas abertas.</small></div>
           <div className="form-submit-field"><button className="btn btn-primary" type="submit">Abrir comanda</button></div>
         </form>
       </section>
       {commands.rows.length === 0 ? <div className="card empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
-        {commands.rows.map((command) => <Link className={`command-card ${command.priority ? "priority-alert" : ""}`} href={`/comandas/${command.id}`} key={command.id}>
+        {commands.rows.map((command) => { const itemCount=Math.trunc(Number(command.items)); return <Link className={`command-card ${command.priority ? "priority-alert" : ""}`} href={`/comandas/${command.id}`} key={command.id}>
           <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">{command.table_display}</span></div>
           {command.priority && <div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
-          <p>{command.customer_name || "Cliente não informado"}<br/>{command.items} item(ns) · {formatDateTime(command.opened_at)}</p>
+          <p>{command.customer_name || "Cliente não informado"}<br/>{itemCount.toLocaleString("pt-BR")} {itemCount===1?"item":"itens"} · {formatDateTime(command.opened_at)}</p>
           <strong className="money">{formatMoney(command.total)}</strong>
-        </Link>)}
+        </Link>;})}
       </div>}
     </>
   );

@@ -4,6 +4,7 @@ import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
 import { hasPermission, isManagementRole } from "@/lib/roles";
+import { DashboardCommandCard } from "@/components/dashboard-command-card";
 import { PriorityInfo } from "@/components/priority-info";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
@@ -15,7 +16,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     query<{ open_commands: string; today_sales: string; low_stock: string; prep_items: string }>(`SELECT
       (SELECT COUNT(*) FROM commands WHERE status='OPEN')::text AS open_commands,
       (SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE status='COMPLETED' AND created_at >= date_trunc('day',NOW()))::text AS today_sales,
-      (SELECT COUNT(*) FROM stock_pools sp WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock AND EXISTS(SELECT 1 FROM products p WHERE p.stock_pool_id=sp.id AND p.active=TRUE))::text AS low_stock,
+      (SELECT COUNT(*) FROM stock_pools sp WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock AND EXISTS(SELECT 1 FROM products p WHERE p.stock_pool_id=sp.id AND p.active=TRUE AND p.deleted_at IS NULL))::text AS low_stock,
       (SELECT COUNT(*) FROM order_items WHERE status IN ('SENT','PREPARING','READY'))::text AS prep_items`),
     query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; total: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
       COALESCE(SUM(oi.unit_price_cents*oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS total
@@ -26,7 +27,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   return (
     <>
       <div className="page-head"><div><p className="eyebrow">Hoje no pub</p><h2>Visão geral</h2><p>Acompanhe os pontos principais da operação.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-primary">Nova comanda</Link>}</div>
-      {erro === "permissao" && <div className="alert alert-error">Seu perfil não possui acesso a essa área.</div>}
+      {erro && <div className="alert alert-error">{erro==="permissao"?"Seu perfil não possui acesso a essa área.":erro}</div>}
       <section className={`grid ${canViewFinance ? "grid-4" : "grid-3"}`}>
         <div className="card stat"><span className="stat-label"><ClipboardList size={16}/> Comandas abertas</span><strong className="stat-value">{data.open_commands}</strong><span className="stat-meta">em atendimento agora</span></div>
         {canViewFinance && <div className="card stat"><span className="stat-label"><WalletCards size={16}/> Vendas de hoje</span><strong className="stat-value">{formatMoney(data.today_sales)}</strong><span className="stat-meta">vendas finalizadas</span></div>}
@@ -36,11 +37,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <section className="card" style={{ marginTop: 22 }}>
         <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Comandas em andamento</h3><p>Últimas comandas abertas.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-light btn-small">Ver todas</Link>}</div>
         {commands.rows.length === 0 ? <div className="empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
-          {commands.rows.map((command) => canUseCommands ? <Link className={`command-card ${command.priority?"priority-alert":""}`} href={`/comandas/${command.id}`} key={command.id}>
-            <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">{command.table_display}</span></div>
-            {command.priority&&<div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
-            <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p>{canViewFinance && <strong className="money">{formatMoney(command.total)}</strong>}
-          </Link> : <div className={`command-card ${command.priority?"priority-alert":""}`} key={command.id}>
+          {commands.rows.map((command) => canUseCommands ? <DashboardCommandCard command={command} canViewFinance={canViewFinance} key={command.id}/> : <div className={`command-card ${command.priority?"priority-alert":""}`} key={command.id}>
             <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">{command.table_display}</span></div>
             {command.priority&&<div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
             <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p>{canViewFinance && <strong className="money">{formatMoney(command.total)}</strong>}

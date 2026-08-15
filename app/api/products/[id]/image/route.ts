@@ -8,7 +8,7 @@ export async function GET(_request: Request, { params }: { params:Promise<{id:st
   if (!user) return new Response(null,{status:404});
   const productId = Number((await params).id);
   if (!Number.isInteger(productId) || productId < 1) return new Response(null,{status:404});
-  const result = await query<{image_data:Buffer|null;image_mime:string|null}>("SELECT image_data,image_mime FROM products WHERE id=$1",[productId]);
+  const result = await query<{image_data:Buffer|null;image_mime:string|null}>("SELECT image_data,image_mime FROM products WHERE id=$1 AND deleted_at IS NULL",[productId]);
   const image = result.rows[0];
   if (!image?.image_data || !image.image_mime) return new Response(null,{status:404});
   return new Response(new Uint8Array(image.image_data),{

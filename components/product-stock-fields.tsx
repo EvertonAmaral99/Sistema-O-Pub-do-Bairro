@@ -1,23 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { InfinityIcon, Link2, Unlink } from "lucide-react";
+import { Beer, InfinityIcon, Package } from "lucide-react";
 
-export type StockLinkOption = {
-  id: number;
-  name: string;
-  stockPoolId: number;
-  saleUnit: string;
+export type DraftStockPool = {
+  stockKind: "DRAFT_BEER" | "DRAFT_WINE";
   stockQuantity: number | string;
-  minStock: number | string;
-  unlimited: boolean;
 };
 
+type StockMode = "OWN" | "DRAFT_BEER" | "DRAFT_WINE" | "UNLIMITED";
+
 type Props = {
-  mode: "create" | "edit";
-  options: StockLinkOption[];
-  currentPoolId?: number;
-  initialLinkedProductId?: number | null;
+  draftPools: DraftStockPool[];
+  initialStockKind?: string | null;
   initialSaleUnit?: string;
   storedStockFactor?: number | string;
   initialStock?: number | string;
@@ -35,52 +30,56 @@ const units = [
   ["CAN", "Lata"],
 ] as const;
 
+const stockModeLabels: Record<StockMode,string> = {
+  OWN: "Estoque próprio deste produto",
+  DRAFT_BEER: "CHOPP CERVEJA — galão de 50 L",
+  DRAFT_WINE: "CHOPP VINHO — galão de 50 L",
+  UNLIMITED: "Estoque ilimitado",
+};
+
 export function ProductStockFields({
-  mode,
-  options,
-  currentPoolId,
-  initialLinkedProductId = null,
+  draftPools,
+  initialStockKind = null,
   initialSaleUnit = "UNIT",
   storedStockFactor = "",
   initialStock = 0,
   initialMinStock = 0,
   initialUnlimited = false,
 }: Props) {
+  const initialMode:StockMode = initialStockKind === "DRAFT_BEER" || initialStockKind === "DRAFT_WINE"
+    ? initialStockKind
+    : initialUnlimited ? "UNLIMITED" : "OWN";
+  const [mode,setMode]=useState<StockMode>(initialMode);
   const [saleUnit,setSaleUnit]=useState(initialSaleUnit);
-  const [linked,setLinked]=useState(Boolean(initialLinkedProductId));
-  const [sourceId,setSourceId]=useState(initialLinkedProductId ? String(initialLinkedProductId) : "");
-  const [unlimited,setUnlimited]=useState(initialUnlimited);
-  const source=options.find((option)=>String(option.id)===sourceId);
-  const changingPool=linked&&Boolean(source)&&source?.stockPoolId!==currentPoolId;
-  const stockLocked=linked&&(mode==="create"||changingPool);
-  const preserveStoredFactor=String(storedStockFactor)!==""&&saleUnit===initialSaleUnit;
-
-  function toggleLink(){
-    setLinked((value)=>!value);
-    if(linked) setSourceId("");
-    else setUnlimited(false);
-  }
-
-  function selectStockSource(value:string){
-    setSourceId(value);
-    const selected=options.find((option)=>String(option.id)===value);
-    if(selected) setSaleUnit(selected.saleUnit);
-  }
+  const isDraft=mode==="DRAFT_BEER"||mode==="DRAFT_WINE";
+  const selectedPool=isDraft?draftPools.find((pool)=>pool.stockKind===mode):undefined;
+  const storedMilliliters=Math.round(Number(storedStockFactor)*1000);
+  const initialMilliliters=storedMilliliters===300||storedMilliliters===500?String(storedMilliliters):"500";
+  const ownInitialStock=initialMode==="OWN"?initialStock:0;
+  const ownInitialMinStock=initialMode==="OWN"?initialMinStock:0;
 
   return <>
-    <div className="field"><label>Unidade do estoque</label><select className="select" name="saleUnit" value={saleUnit} onChange={(event)=>{setSaleUnit(event.target.value);setSourceId("");setLinked(false);}}>{units.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select><small>Esta medida aparece somente no controle interno de estoque.</small></div>
-    {preserveStoredFactor&&<input type="hidden" name="stockPerSaleUnit" value={String(storedStockFactor)}/>}
-
     <section className="stock-link-panel span-2">
-      <div className="stock-link-head"><div><strong>Controle de estoque</strong><small>Use um saldo próprio, compartilhe com outro produto ou marque como ilimitado.</small></div><button className={`btn ${linked?"btn-light":"btn-primary"}`} type="button" onClick={toggleLink}>{linked?<><Unlink size={16}/> Usar estoque separado</>:<><Link2 size={16}/> Vincular estoque</>}</button></div>
-      <input type="hidden" name="stockLinkEnabled" value={linked?"true":"false"}/>
-      {linked&&<div className="field stock-source-field"><label>Produto que fornecerá o estoque</label><select className="select" name="stockSourceProductId" value={sourceId} onChange={(event)=>selectStockSource(event.target.value)} required><option value="">Selecione o produto</option>{options.map((option)=><option key={option.id} value={option.id}>{option.name}{option.unlimited?" — ilimitado":` — saldo ${Number(option.stockQuantity).toLocaleString("pt-BR",{maximumFractionDigits:3})} ${option.saleUnit}`}</option>)}</select><small>Todos os produtos cadastrados aparecem aqui. Ao selecionar um, a unidade e o saldo desse estoque serão adotados automaticamente.</small></div>}
-      {linked&&options.length===0&&<div className="alert alert-info">Ainda não há outro produto cadastrado para vincular.</div>}
-      {changingPool&&<div className="alert alert-info">Ao salvar, este produto passará a usar o saldo selecionado. Os campos de quantidade e mínimo abaixo não serão aplicados.</div>}
+      <div className="stock-link-head"><div><strong>Como controlar o estoque?</strong><small>Os copos são vendidos por unidade. Somente a baixa interna dos chopes é calculada em litros.</small></div></div>
+      <div className="stock-mode-grid">
+        {(Object.keys(stockModeLabels) as StockMode[]).map((value)=><label className="stock-mode-option" key={value}>
+          <input type="radio" name="stockMode" value={value} checked={mode===value} onChange={()=>setMode(value)}/>
+          {value==="OWN"?<Package size={18}/>:value==="UNLIMITED"?<InfinityIcon size={18}/>:<Beer size={18}/>}
+          <span>{stockModeLabels[value]}</span>
+        </label>)}
+      </div>
+      {isDraft&&<div className="draft-stock-choice">
+        <div className="field"><label>Tamanho servido por unidade</label><select className="select" name="servingMilliliters" defaultValue={initialMilliliters}><option value="300">300 ml</option><option value="500">500 ml</option></select></div>
+        <div className="draft-stock-summary"><Beer size={20}/><div><strong>{mode==="DRAFT_BEER"?"Estoque de CHOPP CERVEJA":"Estoque de CHOPP VINHO"}</strong><small>Saldo atual: {Number(selectedPool?.stockQuantity??0).toLocaleString("pt-BR",{maximumFractionDigits:3})} L. Cada venda baixará o volume escolhido acima.</small></div></div>
+      </div>}
+      {mode==="UNLIMITED"&&<div className="alert alert-info">Este produto não terá saldo nem estoque mínimo.</div>}
     </section>
 
-    <div className="field"><label>Quantidade em estoque</label><input className="input" name="stock" type="number" min="0" step="0.001" defaultValue={String(initialStock)} disabled={stockLocked||unlimited} required={!stockLocked&&!unlimited}/>{(stockLocked||unlimited)&&<input type="hidden" name="stock" value="0"/>}<small>{unlimited?"Produtos ilimitados não dependem de saldo.":stockLocked?"O saldo virá do produto vinculado.":"Saldo disponível para venda."}</small></div>
-    <div className="field unlimited-stock-field"><label className="check-row"><input type="checkbox" name="unlimitedStock" checked={unlimited} disabled={stockLocked} onChange={(event)=>setUnlimited(event.target.checked)}/><InfinityIcon size={17}/> Estoque ilimitado</label><small>Use para fichas de jogos e itens que retornam ou não possuem quantidade fixa.</small></div>
-    <div className="field"><label>Estoque mínimo</label><input className="input" name="minStock" type="number" min="0" step="0.001" defaultValue={String(initialMinStock)} disabled={stockLocked||unlimited} required={!stockLocked&&!unlimited}/>{(stockLocked||unlimited)&&<input type="hidden" name="minStock" value="0"/>}<small>{unlimited?"Desativado enquanto o estoque for ilimitado.":stockLocked?"O limite virá do produto vinculado.":"Ao atingir este valor, o item entra na lista de compras."}</small></div>
+    {mode==="OWN"&&<>
+      <div className="field"><label>Unidade do estoque</label><select className="select" name="saleUnit" value={saleUnit} onChange={(event)=>setSaleUnit(event.target.value)}>{units.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select><small>Esta medida aparece somente no controle interno.</small></div>
+      <div className="field"><label>Quantidade em estoque</label><input className="input" name="stock" type="number" min="0" step="0.001" defaultValue={String(ownInitialStock)} required/><small>Saldo disponível para venda.</small></div>
+      <div className="field"><label>Estoque mínimo</label><input className="input" name="minStock" type="number" min="0" step="0.001" defaultValue={String(ownInitialMinStock)} required/><small>Ao atingir este valor, o item entra na lista de compras.</small></div>
+    </>}
+    {mode!=="OWN"&&<><input type="hidden" name="saleUnit" value={isDraft?"L":"UNIT"}/><input type="hidden" name="stock" value="0"/><input type="hidden" name="minStock" value="0"/></>}
   </>;
 }
