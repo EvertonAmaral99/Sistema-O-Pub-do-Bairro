@@ -61,7 +61,7 @@ export async function openCashAction(formData: FormData) {
   try {
     await transaction(async (client) => {
       const created = await client.query<{ id: number }>("INSERT INTO cash_sessions (opened_by,opening_amount_cents) VALUES ($1,$2) RETURNING id", [user.id, openingAmount]);
-      await auditLog({ userId:user.id, action:"CASH_OPENED", entityType:"CASH", entityId:created.rows[0].id, description:`Abriu o caixa com ${moneyText(openingAmount)}.` }, client);
+      await auditLog({ userId:user.id, action:"CASH_OPENED", entityType:"CASH", entityId:created.rows[0].id, description:`Abriu o caixa com ${moneyText(openingAmount)} de fundo em espécie.` }, client);
     });
   } catch { fail("/caixa", "Já existe um caixa aberto."); }
   revalidatePath("/caixa");
@@ -73,17 +73,39 @@ export async function closeCashAction(formData: FormData) {
   const cashId = positiveId(formData.get("cashId"));
   const format = String(formData.get("format") ?? "80");
   const closingAmount = cents(formData.get("closingAmount"));
+  const confirmedPayments = {
+    PIX: cents(formData.get("confirmedPix")),
+    DEBIT: cents(formData.get("confirmedDebit")),
+    CREDIT: cents(formData.get("confirmedCredit")),
+    STAFF_VOUCHER: cents(formData.get("confirmedStaffVoucher")),
+  };
   const notes = String(formData.get("notes") ?? "").trim() || null;
   try {
     await transaction(async (client) => {
       const openCommands = await client.query<{ count:string }>("SELECT COUNT(*)::text AS count FROM commands WHERE status='OPEN'");
       if (Number(openCommands.rows[0]?.count) > 0) throw new Error("Feche as comandas abertas antes de encerrar o caixa.");
-      const totals = await client.query<{ cash_total:string }>(`SELECT COALESCE(SUM(p.amount_cents),0)::text AS cash_total FROM payments p JOIN sales s ON s.id=p.sale_id WHERE s.cash_session_id=$1 AND s.status='COMPLETED' AND p.method='CASH'`, [cashId]);
       const current = await client.query<{ opening_amount_cents:number }>("SELECT opening_amount_cents FROM cash_sessions WHERE id=$1 AND status='OPEN' FOR UPDATE", [cashId]);
       if (!current.rows[0]) throw new Error("Caixa não encontrado ou já fechado.");
-      const expected = Number(current.rows[0].opening_amount_cents) + Number(totals.rows[0]?.cash_total ?? 0);
+      const [sales, paymentRows] = await Promise.all([
+        client.query<{ total:string }>("SELECT COALESCE(SUM(total_cents),0)::text AS total FROM sales WHERE cash_session_id=$1 AND status='COMPLETED'", [cashId]),
+        client.query<{ method:string; total:string }>(`SELECT p.method,COALESCE(SUM(p.amount_cents),0)::text AS total FROM payments p JOIN sales s ON s.id=p.sale_id WHERE s.cash_session_id=$1 AND s.status='COMPLETED' GROUP BY p.method`, [cashId]),
+      ]);
+      const paymentTotals = Object.fromEntries(paymentRows.rows.map((row) => [row.method, Number(row.total)])) as Record<string,number>;
+      const salesTotal = Number(sales.rows[0]?.total ?? 0);
+      const paymentsTotal = Object.values(paymentTotals).reduce((sum, value) => sum + value, 0);
+      if (salesTotal !== paymentsTotal) throw new Error(`O total das vendas (${moneyText(salesTotal)}) não confere com os pagamentos registrados (${moneyText(paymentsTotal)}). Revise as vendas antes de fechar o caixa.`);
+      for (const [method,confirmed] of Object.entries(confirmedPayments)) {
+        const registered = paymentTotals[method] ?? 0;
+        if (confirmed !== registered) {
+          const labels:Record<string,string> = { PIX:"PIX", DEBIT:"débito", CREDIT:"crédito", STAFF_VOUCHER:"vale funcionário" };
+          throw new Error(`O valor conferido em ${labels[method]} não confere. Registrado no sistema: ${moneyText(registered)}.`);
+        }
+      }
+      const cashSales = paymentTotals.CASH ?? 0;
+      const expected = Number(current.rows[0].opening_amount_cents) + cashSales;
+      if (closingAmount !== expected) throw new Error(`O dinheiro contado não confere. Deve haver ${moneyText(expected)} em espécie: ${moneyText(current.rows[0].opening_amount_cents)} de fundo + ${moneyText(cashSales)} das vendas.`);
       await client.query("UPDATE cash_sessions SET status='CLOSED',closed_by=$1,closed_at=NOW(),closing_amount_cents=$2,expected_amount_cents=$3,notes=$4 WHERE id=$5 AND status='OPEN'", [user.id, closingAmount, expected, notes, cashId]);
-      await auditLog({ userId:user.id, action:"CASH_CLOSED", entityType:"CASH", entityId:cashId, description:`Fechou o caixa. Contado: ${moneyText(closingAmount)}; esperado: ${moneyText(expected)}.`, metadata:{ closingAmount, expected } }, client);
+      await auditLog({ userId:user.id, action:"CASH_CLOSED", entityType:"CASH", entityId:cashId, description:`Fechou o caixa após conferir ${moneyText(salesTotal)} em vendas e ${moneyText(expected)} em espécie.`, metadata:{ openingAmount:current.rows[0].opening_amount_cents, salesTotal, paymentsTotal, paymentTotals, closingAmount, expected } }, client);
     });
   } catch (error) { return {error:error instanceof Error ? error.message : "Não foi possível fechar o caixa."}; }
   revalidatePath("/caixa");
@@ -226,13 +248,13 @@ export async function sendKitchenAction(formData: FormData) {
     ticketId = await transaction(async (client) => {
       const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN'", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda fechada.");
-      const items = await client.query<{ id:number }>("SELECT id FROM order_items WHERE command_id=$1 AND status='PENDING' AND destination IN ('KITCHEN','BAR') FOR UPDATE", [commandId]);
-      if (!items.rowCount) throw new Error("Não há novos itens para enviar.");
+      const items = await client.query<{ id:number }>("SELECT id FROM order_items WHERE command_id=$1 AND status='PENDING' AND destination='KITCHEN' FOR UPDATE", [commandId]);
+      if (!items.rowCount) throw new Error("Não há novos itens da cozinha para enviar.");
       const ticket = await client.query<{ id:number }>("INSERT INTO kitchen_tickets (command_id,created_by) VALUES ($1,$2) RETURNING id", [commandId, user.id]);
       const id = ticket.rows[0].id;
       for (const item of items.rows) await client.query("INSERT INTO kitchen_ticket_items (ticket_id,order_item_id) VALUES ($1,$2)", [id, item.id]);
       await client.query("UPDATE order_items SET status='SENT',sent_at=NOW() WHERE id=ANY($1::bigint[])", [items.rows.map((item) => item.id)]);
-      await auditLog({ userId:user.id, action:"KITCHEN_SENT", entityType:"KITCHEN_TICKET", entityId:id, description:`Enviou ${items.rowCount} item(ns) da comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}, para cozinha/bar.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, itemCount:items.rowCount } }, client);
+      await auditLog({ userId:user.id, action:"KITCHEN_SENT", entityType:"KITCHEN_TICKET", entityId:id, description:`Enviou ${items.rowCount} item(ns) da comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}, para a cozinha.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, itemCount:items.rowCount } }, client);
       return id;
     });
   } catch (error) { return {error:error instanceof Error ? error.message : "Não foi possível enviar o pedido."}; }
@@ -247,8 +269,8 @@ export async function updateKitchenStatusAction(formData: FormData) {
   const status = String(formData.get("status") ?? "");
   if (!["PREPARING","READY","DELIVERED"].includes(status)) throw new Error("Situação inválida.");
   await transaction(async (client) => {
-    const item = await client.query<{ product_name:string;command_number:number;display_label:string }>("SELECT oi.product_name,c.command_number,cl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE oi.id=$1 AND oi.status<>'CANCELLED' FOR UPDATE OF oi", [itemId]);
-    if (!item.rows[0]) throw new Error("Item não encontrado.");
+    const item = await client.query<{ product_name:string;command_number:number;display_label:string }>("SELECT oi.product_name,c.command_number,cl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE oi.id=$1 AND oi.destination='KITCHEN' AND oi.status<>'CANCELLED' FOR UPDATE OF oi", [itemId]);
+    if (!item.rows[0]) throw new Error("Item da cozinha não encontrado.");
     await client.query("UPDATE order_items SET status=$1 WHERE id=$2", [status, itemId]);
     const labels:Record<string,string> = { PREPARING:"em preparo", READY:"pronto", DELIVERED:"entregue" };
     await auditLog({ userId:user.id, action:"KITCHEN_STATUS_UPDATED", entityType:"ORDER_ITEM", entityId:itemId, description:`Marcou ${item.rows[0].product_name} da comanda #${item.rows[0].command_number}, ${item.rows[0].display_label}, como ${labels[status]}.`, metadata:{ commandNumber:item.rows[0].command_number, table:item.rows[0].display_label, productName:item.rows[0].product_name, status } }, client);

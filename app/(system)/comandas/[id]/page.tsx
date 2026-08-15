@@ -30,7 +30,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
   ]);
   const activeItems = items.rows.filter((item) => item.status !== "CANCELLED");
   const subtotal = Math.round(activeItems.reduce((sum, item) => sum + Number(item.unit_price_cents) * Number(item.quantity), 0));
-  const hasPrepPending = activeItems.some((item) => item.status === "PENDING" && item.destination !== "DIRECT");
+  const hasPrepPending = activeItems.some((item) => item.status === "PENDING" && item.destination === "KITCHEN");
   const statusLabel: Record<string,string> = { PENDING:"Novo",SENT:"Enviado",PREPARING:"Preparando",READY:"Pronto",DELIVERED:"Entregue",CANCELLED:"Removido" };
   return (
     <>
@@ -49,7 +49,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
           <h3><ShoppingCart size={17}/> Itens da comanda</h3>
           {activeItems.length === 0 ? <div className="empty" style={{ padding: "28px 12px" }}>Adicione o primeiro produto.</div> : <div className="form-stack">
             {activeItems.map((item) => <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, borderBottom: "1px solid var(--line)", paddingBottom: 11 }}>
-              <div><strong>{formatQuantity(item.quantity,item.display_unit)} · {item.product_name}</strong><div style={{ marginTop: 5 }}><span className={`badge ${item.status === "PENDING" ? "badge-amber" : item.status === "READY" ? "badge-green" : "badge-blue"}`}>{statusLabel[item.status]}</span></div></div>
+              <div><strong>{formatQuantity(item.quantity,item.display_unit)} · {item.product_name}</strong><div style={{ marginTop: 5 }}><span className={`badge ${item.destination!=="KITCHEN"||item.status === "PENDING" ? "badge-amber" : item.status === "READY" ? "badge-green" : "badge-blue"}`}>{item.destination!=="KITCHEN"?"Entrega pelo garçom":statusLabel[item.status]}</span></div></div>
               <div style={{ textAlign: "right" }}><span className="money">{formatMoney(item.unit_price_cents * Number(item.quantity))}</span>{command.status === "OPEN" && canManage && <form action={removeItemAction} style={{ marginTop: 6 }}><input type="hidden" name="commandId" value={commandId}/><input type="hidden" name="itemId" value={item.id}/><button className="btn btn-danger btn-small" type="submit" title="Remover item"><MinusCircle size={14}/></button></form>}</div>
             </div>)}
           </div>}
@@ -58,8 +58,9 @@ export default async function CommandDetailPage({ params, searchParams }: Params
             <div className="divider"/>
             <PrintActionForm action={sendKitchenAction} className="form-stack">
               <input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Formato do pedido</label><select className="select" name="format" defaultValue="80"><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
-              <button className="btn btn-dark" type="submit" disabled={!hasPrepPending}><Send size={16}/> Enviar e imprimir cozinha</button>
+              <button className="btn btn-dark" type="submit" disabled={!hasPrepPending}><Send size={16}/> Enviar itens para a cozinha</button>
             </PrintActionForm>
+            {!hasPrepPending&&<small style={{color:"var(--muted)"}}>Somente produtos cadastrados no setor Cozinha geram pedido de preparo.</small>}
             <div className="divider"/>
             {canManage?<><h3>Fechar comanda</h3><PaymentForm commandId={commandId} subtotal={subtotal}/><div className="divider"/><details className="cancel-command"><summary>Cancelar esta comanda</summary><form action={cancelCommandAction} className="form-stack"><input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Motivo do cancelamento</label><input className="input" name="reason" minLength={3} required/></div><button className="btn btn-danger" type="submit"><XCircle size={16}/> Cancelar comanda e devolver itens ao estoque</button></form></details></>:<div className="permission-lock"><span>Finalizar, cancelar ou alterar itens já lançados é permitido somente para Caixa, Gerente e Administrador.</span></div>}
           </>}

@@ -17,7 +17,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       (SELECT COUNT(*) FROM commands WHERE status='OPEN')::text AS open_commands,
       (SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE status='COMPLETED' AND created_at >= date_trunc('day',NOW()))::text AS today_sales,
       (SELECT COUNT(*) FROM stock_pools sp WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock AND EXISTS(SELECT 1 FROM products p WHERE p.stock_pool_id=sp.id AND p.active=TRUE AND p.deleted_at IS NULL))::text AS low_stock,
-      (SELECT COUNT(*) FROM order_items WHERE status IN ('SENT','PREPARING','READY'))::text AS prep_items`),
+      (SELECT COUNT(*) FROM order_items WHERE destination='KITCHEN' AND status IN ('SENT','PREPARING','READY'))::text AS prep_items`),
     query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; total: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
       COALESCE(SUM(oi.unit_price_cents*oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS total
       FROM commands c JOIN command_locations cl ON cl.command_id=c.id LEFT JOIN order_items oi ON oi.command_id=c.id
@@ -31,7 +31,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <section className={`grid ${canViewFinance ? "grid-4" : "grid-3"}`}>
         <div className="card stat"><span className="stat-label"><ClipboardList size={16}/> Comandas abertas</span><strong className="stat-value">{data.open_commands}</strong><span className="stat-meta">em atendimento agora</span></div>
         {canViewFinance && <div className="card stat"><span className="stat-label"><WalletCards size={16}/> Vendas de hoje</span><strong className="stat-value">{formatMoney(data.today_sales)}</strong><span className="stat-meta">vendas finalizadas</span></div>}
-        <div className="card stat"><span className="stat-label"><ChefHat size={16}/> Em preparo</span><strong className="stat-value">{data.prep_items}</strong><span className="stat-meta">itens na cozinha e no bar</span></div>
+        <div className="card stat"><span className="stat-label"><ChefHat size={16}/> Em preparo</span><strong className="stat-value">{data.prep_items}</strong><span className="stat-meta">somente itens da cozinha</span></div>
         <div className="card stat"><span className="stat-label"><AlertTriangle size={16}/> Estoque baixo</span><strong className="stat-value">{data.low_stock}</strong><span className="stat-meta">produtos no mínimo ou abaixo</span></div>
       </section>
       <section className="card" style={{ marginTop: 22 }}>
