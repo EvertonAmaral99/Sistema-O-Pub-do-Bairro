@@ -11,7 +11,7 @@ export default async function SystemLayout({ children }: { children: React.React
     <div className="app-shell">
       <Sidebar user={user}/>
       <div className="main-area">
-        <header className="topbar"><div className="topbar-brand"><BrandLogo className="topbar-logo" priority /><h1>Gestão do bar</h1></div><span style={{ color: "var(--muted)", fontSize: 13, textTransform: "capitalize" }}>{today}</span></header>
+        <header className="topbar"><div className="topbar-brand"><BrandLogo className="topbar-logo" priority /><h1>Gestão do bar</h1></div><div className="topbar-user"><strong>{user.name}</strong><span>{today}</span></div></header>
         <main className="content">{children}</main>
       </div>
     </div>

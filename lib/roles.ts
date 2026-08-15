@@ -1,4 +1,4 @@
-export type Role = "ADMIN" | "MANAGER" | "CASHIER" | "KITCHEN" | "WAITER";
+export type Role = "ADMIN" | "MANAGER" | "CASHIER" | "KITCHEN" | "WAITER" | "ATTENDANT";
 export const permissionConfig = [
   { key: "DASHBOARD", label: "Visão geral", description: "Painel com resumo do movimento" },
   { key: "COMMANDS", label: "Comandas", description: "Abrir, lançar e fechar comandas" },
@@ -18,10 +18,11 @@ export const defaultPermissionsByRole: Record<Role, Permission[]> = {
   CASHIER: ["DASHBOARD", "COMMANDS"],
   KITCHEN: ["DASHBOARD", "KITCHEN"],
   WAITER: ["DASHBOARD", "COMMANDS"],
+  ATTENDANT: ["DASHBOARD", "COMMANDS"],
 };
 
 export type SessionUser = { id: number; name: string; username: string; role: Role; permissions: Permission[] };
-export const roleLabel: Record<Role, string> = { ADMIN: "Administrador", MANAGER: "Gerente", CASHIER: "Caixa", KITCHEN: "Cozinha", WAITER: "Garçom" };
+export const roleLabel: Record<Role, string> = { ADMIN: "Administrador", MANAGER: "Gerente", CASHIER: "Caixa", KITCHEN: "Cozinha", WAITER: "Garçom", ATTENDANT: "Atendente" };
 
 export function isManagementRole(role: Role) {
   return role === "ADMIN" || role === "MANAGER";
@@ -41,5 +42,5 @@ export function firstAllowedPath(user: SessionUser) {
     ["DASHBOARD", "/painel"], ["COMMANDS", "/comandas"], ["KITCHEN", "/cozinha"],
     ["PRODUCTS", "/produtos"], ["STOCK", "/estoque"], ["CASH", "/caixa"], ["REPORTS", "/relatorios"],
   ];
-  return routes.find(([permission]) => hasPermission(user, permission))?.[1] ?? (user.role === "ADMIN" || user.role === "MANAGER" ? "/configuracoes" : "/sem-acesso");
+  return routes.find(([permission]) => hasPermission(user, permission))?.[1] ?? "/configuracoes";
 }

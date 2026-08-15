@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditLog } from "@/lib/audit";
-import { hashPassword, requirePermission, requireRole } from "@/lib/auth";
+import { hashPassword, requirePermission, requireRole, requireUser, verifyPassword } from "@/lib/auth";
 import { transaction } from "@/lib/db";
 import { defaultPermissionsByRole, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
 
@@ -25,6 +25,18 @@ function fail(path: string, message: string): never {
 }
 function moneyText(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value / 100);
+}
+
+async function readProductImage(value: FormDataEntryValue | null) {
+  if (!value || typeof value === "string" || value.size === 0) return null;
+  if (value.size > 3 * 1024 * 1024) throw new Error("A foto deve ter no máximo 3 MB.");
+  if (!["image/jpeg","image/png","image/webp"].includes(value.type)) throw new Error("Envie a foto em JPG, PNG ou WebP.");
+  const data = Buffer.from(await value.arrayBuffer());
+  const jpeg = data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  const png = data.length > 8 && data.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
+  const webp = data.length > 12 && data.toString("ascii",0,4) === "RIFF" && data.toString("ascii",8,12) === "WEBP";
+  if (!(jpeg || png || webp)) throw new Error("O conteúdo do arquivo não corresponde a uma imagem aceita.");
+  return { data, mime:value.type };
 }
 
 export async function openCashAction(formData: FormData) {
@@ -243,12 +255,49 @@ export async function createProductAction(formData: FormData) {
   const stock = Math.max(0, quantityValue(formData.get("stock")));
   const minStock = Math.max(0, quantityValue(formData.get("minStock")));
   if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail("/produtos", "Preencha os dados do produto.");
+  let image:null|{data:Buffer;mime:string}=null;
+  try { image=await readProductImage(formData.get("image")); }
+  catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível processar a foto."); }
   await transaction(async (client) => {
-    const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [name, category, price, stock, minStock, destination, saleUnit]);
-    await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.`, metadata:{ category, stock, minStock, destination, saleUnit } }, client);
+    const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,image_data,image_mime,image_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $8::bytea IS NULL THEN NULL ELSE NOW() END) RETURNING id", [name, category, price, stock, minStock, destination, saleUnit, image?.data??null, image?.mime??null]);
+    await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.`, metadata:{ category, stock, minStock, destination, saleUnit, hasImage:Boolean(image) } }, client);
   });
   revalidatePath("/produtos");
   revalidatePath("/estoque");
+  redirect("/produtos");
+}
+
+export async function updateProductAction(formData: FormData) {
+  const user = await requirePermission("PRODUCTS");
+  const productId = positiveId(formData.get("productId"));
+  const name = String(formData.get("name") ?? "").trim();
+  const category = String(formData.get("category") ?? "").trim();
+  const destination = String(formData.get("destination") ?? "DIRECT");
+  const saleUnit = String(formData.get("saleUnit") ?? "UNIT");
+  const price = cents(formData.get("price"));
+  const stock = Math.max(0, quantityValue(formData.get("stock")));
+  const minStock = Math.max(0, quantityValue(formData.get("minStock")));
+  const active = formData.get("active") === "on";
+  const removeImage = formData.get("removeImage") === "on";
+  if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail(`/produtos/${productId}`, "Revise os dados do produto.");
+  let image:null|{data:Buffer;mime:string}=null;
+  try { image=await readProductImage(formData.get("image")); }
+  catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível processar a foto."); }
+  try {
+    await transaction(async (client) => {
+      const current = await client.query<{name:string;stock_quantity:number|string;price_cents:number;min_stock:number|string;has_image:boolean}>("SELECT name,stock_quantity,price_cents,min_stock,(image_data IS NOT NULL) AS has_image FROM products WHERE id=$1 FOR UPDATE",[productId]);
+      if(!current.rows[0]) throw new Error("Produto não encontrado.");
+      const old=current.rows[0]; const difference=Math.round((stock-Number(old.stock_quantity))*1000)/1000;
+      await client.query(`UPDATE products SET name=$1,category=$2,price_cents=$3,stock_quantity=$4,min_stock=$5,destination=$6,sale_unit=$7,active=$8,
+        image_data=CASE WHEN $9::boolean THEN NULL WHEN $10::bytea IS NOT NULL THEN $10 ELSE image_data END,
+        image_mime=CASE WHEN $9::boolean THEN NULL WHEN $10::bytea IS NOT NULL THEN $11 ELSE image_mime END,
+        image_updated_at=CASE WHEN $9::boolean THEN NOW() WHEN $10::bytea IS NOT NULL THEN NOW() ELSE image_updated_at END,updated_at=NOW() WHERE id=$12`,
+        [name,category,price,stock,minStock,destination,saleUnit,active,removeImage,image?.data??null,image?.mime??null,productId]);
+      if(difference!==0) await client.query("INSERT INTO stock_movements (product_id,quantity,reason,user_id) VALUES ($1,$2,'PRODUCT_EDIT',$3)",[productId,difference,user.id]);
+      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}, estoque ${old.stock_quantity} → ${stock}, mínimo ${old.min_stock} → ${minStock}.`,metadata:{name,category,price,stock,minStock,destination,saleUnit,active,imageChanged:Boolean(image)||removeImage}},client);
+    });
+  } catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível atualizar o produto."); }
+  revalidatePath("/produtos"); revalidatePath(`/produtos/${productId}`); revalidatePath("/estoque"); revalidatePath("/comandas");
   redirect("/produtos");
 }
 
@@ -292,10 +341,10 @@ export async function createUserAction(formData: FormData) {
   const username = String(formData.get("username") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const roleValue = String(formData.get("role") ?? "");
-  const roles:Role[] = ["ADMIN","MANAGER","CASHIER","KITCHEN","WAITER"];
+  const roles:Role[] = ["ADMIN","MANAGER","CASHIER","KITCHEN","WAITER","ATTENDANT"];
   if (name.length < 2 || username.length < 3 || password.length < 8 || !roles.includes(roleValue as Role)) fail("/configuracoes", "Revise os dados do funcionário.");
   const role = roleValue as Role;
-  if (actor.role === "MANAGER" && !["CASHIER","KITCHEN","WAITER"].includes(role)) fail("/configuracoes", "Gerentes podem cadastrar somente Caixa, Cozinha ou Garçom.");
+  if (actor.role === "MANAGER" && !["CASHIER","KITCHEN","WAITER","ATTENDANT"].includes(role)) fail("/configuracoes", "Gerentes podem cadastrar somente Caixa, Cozinha, Garçom ou Atendente.");
   try {
     await transaction(async (client) => {
       const created = await client.query<{ id:number }>("INSERT INTO users (name,username,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING id", [name, username, await hashPassword(password), role]);
@@ -305,6 +354,44 @@ export async function createUserAction(formData: FormData) {
   } catch { fail("/configuracoes", "Esse usuário já existe."); }
   revalidatePath("/configuracoes");
   redirect("/configuracoes");
+}
+
+export async function toggleUserStatusAction(formData: FormData) {
+  const actor=await requireRole(["ADMIN","MANAGER"]);
+  const userId=positiveId(formData.get("userId"));
+  const nextActive=formData.get("nextActive")==="true";
+  try{
+    await transaction(async(client)=>{
+      const target=await client.query<{name:string;role:Role;active:boolean}>("SELECT name,role,active FROM users WHERE id=$1 FOR UPDATE",[userId]);
+      if(!target.rows[0]) throw new Error("Funcionário não encontrado.");
+      if(userId===actor.id&&!nextActive) throw new Error("Você não pode inativar o próprio usuário.");
+      if(actor.role==="MANAGER"&&isManagementRole(target.rows[0].role)) throw new Error("Somente Administradores podem alterar Gerentes ou Administradores.");
+      if(target.rows[0].role==="ADMIN"&&!nextActive){const admins=await client.query<{id:number}>("SELECT id FROM users WHERE role='ADMIN' AND active=TRUE FOR UPDATE");if(admins.rows.length<=1)throw new Error("O sistema precisa manter ao menos um Administrador ativo.");}
+      await client.query("UPDATE users SET active=$1 WHERE id=$2",[nextActive,userId]);
+      if(!nextActive) await client.query("DELETE FROM sessions WHERE user_id=$1",[userId]);
+      await auditLog({userId:actor.id,action:"USER_STATUS_CHANGED",entityType:"USER",entityId:userId,description:`${nextActive?"Ativou":"Inativou"} o funcionário ${target.rows[0].name}.`,metadata:{active:nextActive,role:target.rows[0].role}},client);
+    });
+  }catch(error){fail("/configuracoes",error instanceof Error?error.message:"Não foi possível alterar o funcionário.");}
+  revalidatePath("/configuracoes"); redirect("/configuracoes");
+}
+
+export async function changeOwnPasswordAction(formData: FormData) {
+  const user = await requireUser();
+  const currentPassword = String(formData.get("currentPassword") ?? "");
+  const newPassword = String(formData.get("newPassword") ?? "");
+  const confirmation = String(formData.get("confirmation") ?? "");
+  if (newPassword.length < 8) fail("/configuracoes", "A nova senha deve ter pelo menos 8 caracteres.");
+  if (newPassword !== confirmation) fail("/configuracoes", "A confirmação da nova senha não confere.");
+  try {
+    await transaction(async (client) => {
+      const result = await client.query<{ password_hash:string }>("SELECT password_hash FROM users WHERE id=$1 AND active=TRUE FOR UPDATE", [user.id]);
+      if (!result.rows[0]) throw new Error("Usuário não encontrado.");
+      if (!(await verifyPassword(currentPassword, result.rows[0].password_hash))) throw new Error("A senha atual está incorreta.");
+      await client.query("UPDATE users SET password_hash=$1 WHERE id=$2", [await hashPassword(newPassword), user.id]);
+      await auditLog({ userId:user.id, action:"PASSWORD_CHANGED", entityType:"USER", entityId:user.id, description:"Alterou a própria senha." }, client);
+    });
+  } catch (error) { fail("/configuracoes", error instanceof Error ? error.message : "Não foi possível alterar a senha."); }
+  redirect("/configuracoes?sucesso=senha");
 }
 
 export async function updateUserPermissionsAction(formData: FormData) {

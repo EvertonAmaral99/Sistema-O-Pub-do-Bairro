@@ -18,7 +18,7 @@ const links: LinkItem[] = [
   { href: "/caixa", label: "Caixa", icon: CircleDollarSign, roles: ["ADMIN", "MANAGER"] },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["ADMIN", "MANAGER"] },
-  { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN", "MANAGER"] },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN", "MANAGER", "CASHIER", "KITCHEN", "WAITER", "ATTENDANT"] },
   { href: "/logs", label: "Histórico", icon: ScrollText, roles: ["ADMIN", "MANAGER"] },
 ];
 

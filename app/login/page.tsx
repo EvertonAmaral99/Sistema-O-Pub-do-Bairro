@@ -24,6 +24,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       </section>
       <section className="auth-panel">
         <div className="auth-card">
+          <BrandLogo className="login-card-logo" priority />
           <p className="eyebrow">Bem-vindo</p>
           <h2>Entrar no sistema</h2>
           <p style={{ color: "var(--muted)", marginBottom: 28 }}>Use seu usuário e senha cadastrados.</p>

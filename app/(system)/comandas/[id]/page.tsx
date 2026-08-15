@@ -1,5 +1,6 @@
+import Image from "next/image";
 import { notFound } from "next/navigation";
-import { MinusCircle, Send, ShoppingCart, XCircle } from "lucide-react";
+import { ImageIcon, MinusCircle, Send, ShoppingCart, XCircle } from "lucide-react";
 import { addItemAction, cancelCommandAction, removeItemAction, sendKitchenAction } from "@/app/system-actions";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
@@ -16,7 +17,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
   const command = commandResult.rows[0]; if (!command) notFound();
   const [items, products] = await Promise.all([
     query<{ id: number; product_name: string; quantity: number|string; unit_price_cents: number; status: string; destination: string;sale_unit:string }>("SELECT id,product_name,quantity,unit_price_cents,status,destination,sale_unit FROM order_items WHERE command_id=$1 ORDER BY created_at DESC", [commandId]),
-    query<{ id: number; name: string; category: string; price_cents: number; stock_quantity: number|string; destination: string; sale_unit:string }>(`SELECT id,name,category,price_cents,stock_quantity,destination,sale_unit FROM products WHERE active=TRUE AND ($1='' OR name ILIKE '%'||$1||'%' OR category ILIKE '%'||$1||'%') ORDER BY category,name LIMIT 80`, [busca]),
+    query<{ id: number; name: string; category: string; price_cents: number; stock_quantity: number|string; destination: string; sale_unit:string; has_image:boolean; image_updated_at:string|null }>(`SELECT id,name,category,price_cents,stock_quantity,destination,sale_unit,(image_data IS NOT NULL) AS has_image,image_updated_at FROM products WHERE active=TRUE AND ($1='' OR name ILIKE '%'||$1||'%' OR category ILIKE '%'||$1||'%') ORDER BY category,name LIMIT 80`, [busca]),
   ]);
   const activeItems = items.rows.filter((item) => item.status !== "CANCELLED");
   const subtotal = Math.round(activeItems.reduce((sum, item) => sum + Number(item.unit_price_cents) * Number(item.quantity), 0));
@@ -33,6 +34,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
           <div className="product-list">
             {products.rows.map((product) => <form action={addItemAction} className="product-button product-add-card" key={product.id}>
               <input type="hidden" name="commandId" value={commandId}/><input type="hidden" name="productId" value={product.id}/>
+              {product.has_image ? <Image className="command-product-photo" src={`/api/products/${product.id}/image?v=${encodeURIComponent(product.image_updated_at ?? "1")}`} alt={product.name} width={220} height={120} unoptimized/> : <span className="command-product-photo command-product-photo-empty"><ImageIcon size={24}/></span>}
               <strong>{product.name}</strong><small>{product.category} · Estoque {formatQuantity(product.stock_quantity,product.sale_unit)}</small><div className="money" style={{ marginTop: 10 }}>{formatMoney(product.price_cents)}</div>
               <div className="product-quantity-row"><input className="input" aria-label={`Quantidade de ${product.name}`} name="quantity" type="number" min={["KG","L"].includes(product.sale_unit) ? "0.001" : "1"} max={String(product.stock_quantity)} step={["KG","L"].includes(product.sale_unit) ? "0.001" : "1"} defaultValue="1" required/><button className="btn btn-primary btn-small" type="submit" disabled={command.status !== "OPEN" || Number(product.stock_quantity) <= 0}>Adicionar</button></div>
             </form>)}

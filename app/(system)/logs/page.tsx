@@ -14,8 +14,8 @@ const movementConfig = [
   ["LOGIN","Entrada no sistema"],["LOGOUT","Saída do sistema"],["COMMAND_OPENED","Abrir comanda"],["COMMAND_CANCELLED","Cancelar comanda"],
   ["ITEM_ADDED","Adicionar item à comanda"],["ITEM_REMOVED","Excluir item da comanda"],["KITCHEN_SENT","Enviar para cozinha/bar"],["KITCHEN_STATUS_UPDATED","Atualizar produção"],
   ["SALE_COMPLETED","Fechar comanda/venda"],["SALE_CANCELLED","Cancelar venda"],["CASH_OPENED","Abrir caixa"],["CASH_CLOSED","Fechar caixa"],
-  ["PRODUCT_CREATED","Cadastrar produto"],["STOCK_ADJUSTED","Ajustar estoque"],["TABLE_CREATED","Cadastrar mesa"],["USER_CREATED","Cadastrar usuário"],
-  ["PERMISSIONS_UPDATED","Alterar permissões"],["EVENT_CREATED","Cadastrar evento"],["EVENT_UPDATED","Alterar evento"],["EVENT_DELETED","Excluir evento"],
+  ["PRODUCT_CREATED","Cadastrar produto"],["PRODUCT_UPDATED","Alterar produto"],["STOCK_ADJUSTED","Ajustar estoque"],["TABLE_CREATED","Cadastrar mesa"],["USER_CREATED","Cadastrar usuário"],
+  ["USER_STATUS_CHANGED","Ativar ou inativar usuário"],["PASSWORD_CHANGED","Alterar senha"],["PERMISSIONS_UPDATED","Alterar permissões"],["EVENT_CREATED","Cadastrar evento"],["EVENT_UPDATED","Alterar evento"],["EVENT_DELETED","Excluir evento"],
 ] as const;
 
 export default async function LogsPage({searchParams}:{searchParams:Promise<{usuario?:string;movimento?:string}>}) {
