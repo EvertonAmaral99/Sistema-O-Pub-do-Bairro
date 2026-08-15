@@ -9,6 +9,7 @@ import { canManageCommand } from "@/lib/roles";
 import { PaymentForm } from "@/components/payment-form";
 import { CommandProductPicker, type CommandProduct } from "@/components/command-product-picker";
 import { PrintActionForm } from "@/components/print-action-form";
+import { commandLabel } from "@/lib/command-label";
 
 type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ erro?: string }> };
 
@@ -17,7 +18,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
   const canManage=canManageCommand(user.role);
   const commandId = Number((await params).id);
   const { erro } = await searchParams;
-  const commandResult = await query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; notes: string | null; status: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.notes,c.status,c.priority,c.priority_note FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1`, [commandId]);
+  const commandResult = await query<{ id: number; command_number: number|null; command_name:string|null; table_display: string; customer_name: string | null; opened_at: string; notes: string | null; status: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,c.command_name,cl.display_label AS table_display,c.customer_name,c.opened_at,c.notes,c.status,c.priority,c.priority_note FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1`, [commandId]);
   const command = commandResult.rows[0]; if (!command) notFound();
   const [items, products, tables] = await Promise.all([
     query<{ id: number; product_name: string; quantity: number|string; unit_price_cents: number; status: string; destination: string;display_unit:string }>("SELECT id,product_name,quantity,unit_price_cents,status,destination,display_unit FROM order_items WHERE command_id=$1 ORDER BY created_at DESC", [commandId]),
@@ -34,7 +35,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
   const statusLabel: Record<string,string> = { PENDING:"Novo",SENT:"Enviado",PREPARING:"Preparando",READY:"Pronto",DELIVERED:"Entregue",CANCELLED:"Removido" };
   return (
     <>
-      <div className="page-head"><div><p className="eyebrow">{command.table_display}</p><h2>Comanda #{command.command_number}</h2><p>{command.customer_name || "Cliente não informado"} · Aberta em {formatDateTime(command.opened_at)}</p></div><div className="actions">{command.priority&&<span className="badge badge-red">Prioridade <PriorityInfo note={command.priority_note}/></span>}<span className={`badge ${command.status === "OPEN" ? "badge-green" : command.status === "CANCELLED" ? "badge-red" : "badge-gray"}`}>{command.status === "OPEN" ? "Aberta" : command.status === "CANCELLED" ? "Cancelada" : "Finalizada"}</span></div></div>
+      <div className="page-head"><div><p className="eyebrow">{command.table_display}</p><h2>Comanda {commandLabel(command)}</h2><p>{command.customer_name || "Cliente não informado"} · Aberta em {formatDateTime(command.opened_at)}</p></div><div className="actions">{command.priority&&<span className="badge badge-red">Prioridade <PriorityInfo note={command.priority_note}/></span>}<span className={`badge ${command.status === "OPEN" ? "badge-green" : command.status === "CANCELLED" ? "badge-red" : "badge-gray"}`}>{command.status === "OPEN" ? "Aberta" : command.status === "CANCELLED" ? "Cancelada" : "Finalizada"}</span></div></div>
       {erro && <div className="alert alert-error">{erro}</div>}
       <div className="split-layout command-detail-layout">
         <section className="card command-products-panel">

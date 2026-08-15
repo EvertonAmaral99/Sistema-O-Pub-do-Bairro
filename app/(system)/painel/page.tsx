@@ -6,6 +6,7 @@ import { requirePermission } from "@/lib/auth";
 import { hasPermission, isManagementRole } from "@/lib/roles";
 import { DashboardCommandCard } from "@/components/dashboard-command-card";
 import { PriorityInfo } from "@/components/priority-info";
+import { commandLabel } from "@/lib/command-label";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
   const user = await requirePermission("DASHBOARD");
@@ -13,12 +14,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const canViewFinance = isManagementRole(user.role);
   const { erro } = await searchParams;
   const [stats, commands] = await Promise.all([
-    query<{ open_commands: string; today_sales: string; low_stock: string; prep_items: string }>(`SELECT
+    query<{ open_commands: string; predicted_total: string; low_stock: string; prep_items: string }>(`SELECT
       (SELECT COUNT(*) FROM commands WHERE status='OPEN')::text AS open_commands,
-      (SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE status='COMPLETED' AND created_at >= date_trunc('day',NOW()))::text AS today_sales,
+      ((SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE status='COMPLETED' AND created_at >= date_trunc('day',NOW())) +
+       (SELECT COALESCE(SUM(oi.unit_price_cents*oi.quantity),0) FROM order_items oi JOIN commands c ON c.id=oi.command_id WHERE c.status='OPEN' AND oi.status<>'CANCELLED'))::text AS predicted_total,
       (SELECT COUNT(*) FROM stock_pools sp WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock AND EXISTS(SELECT 1 FROM products p WHERE p.stock_pool_id=sp.id AND p.active=TRUE AND p.deleted_at IS NULL))::text AS low_stock,
       (SELECT COUNT(*) FROM order_items WHERE destination='KITCHEN' AND status IN ('SENT','PREPARING','READY'))::text AS prep_items`),
-    query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; total: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
+    query<{ id: number; command_number: number|null; command_name:string|null; table_display: string; customer_name: string | null; opened_at: string; total: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,c.command_name,cl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
       COALESCE(SUM(oi.unit_price_cents*oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS total
       FROM commands c JOIN command_locations cl ON cl.command_id=c.id LEFT JOIN order_items oi ON oi.command_id=c.id
       WHERE c.status='OPEN' GROUP BY c.id,cl.display_label ORDER BY c.priority DESC,c.opened_at DESC LIMIT 8`),
@@ -30,7 +32,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       {erro && <div className="alert alert-error">{erro==="permissao"?"Seu perfil não possui acesso a essa área.":erro}</div>}
       <section className={`grid ${canViewFinance ? "grid-4" : "grid-3"}`}>
         <div className="card stat"><span className="stat-label"><ClipboardList size={16}/> Comandas abertas</span><strong className="stat-value">{data.open_commands}</strong><span className="stat-meta">em atendimento agora</span></div>
-        {canViewFinance && <div className="card stat"><span className="stat-label"><WalletCards size={16}/> Vendas de hoje</span><strong className="stat-value">{formatMoney(data.today_sales)}</strong><span className="stat-meta">vendas finalizadas</span></div>}
+        {canViewFinance && <div className="card stat"><span className="stat-label"><WalletCards size={16}/> Total previsto</span><strong className="stat-value">{formatMoney(data.predicted_total)}</strong><span className="stat-meta">vendas de hoje + comandas abertas</span></div>}
         <div className="card stat"><span className="stat-label"><ChefHat size={16}/> Em preparo</span><strong className="stat-value">{data.prep_items}</strong><span className="stat-meta">somente itens da cozinha</span></div>
         <div className="card stat"><span className="stat-label"><AlertTriangle size={16}/> Estoque baixo</span><strong className="stat-value">{data.low_stock}</strong><span className="stat-meta">produtos no mínimo ou abaixo</span></div>
       </section>
@@ -38,7 +40,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Comandas em andamento</h3><p>Últimas comandas abertas.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-light btn-small">Ver todas</Link>}</div>
         {commands.rows.length === 0 ? <div className="empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
           {commands.rows.map((command) => canUseCommands ? <DashboardCommandCard command={command} canViewFinance={canViewFinance} key={command.id}/> : <div className={`command-card ${command.priority?"priority-alert":""}`} key={command.id}>
-            <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">{command.table_display}</span></div>
+            <div className="command-top"><span className="command-number">{commandLabel(command)}</span><span className="badge badge-amber">{command.table_display}</span></div>
             {command.priority&&<div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
             <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p>{canViewFinance && <strong className="money">{formatMoney(command.total)}</strong>}
           </div>)}
