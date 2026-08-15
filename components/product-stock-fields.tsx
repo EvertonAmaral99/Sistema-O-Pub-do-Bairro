@@ -54,7 +54,7 @@ export function ProductStockFields({
   const isDraft=mode==="DRAFT_BEER"||mode==="DRAFT_WINE";
   const selectedPool=isDraft?draftPools.find((pool)=>pool.stockKind===mode):undefined;
   const storedMilliliters=Math.round(Number(storedStockFactor)*1000);
-  const initialMilliliters=storedMilliliters===300||storedMilliliters===500?String(storedMilliliters):"500";
+  const initialMilliliters=[190,300,500].includes(storedMilliliters)?String(storedMilliliters):"500";
   const ownInitialStock=initialMode==="OWN"?initialStock:0;
   const ownInitialMinStock=initialMode==="OWN"?initialMinStock:0;
 
@@ -69,7 +69,7 @@ export function ProductStockFields({
         </label>)}
       </div>
       {isDraft&&<div className="draft-stock-choice">
-        <div className="field"><label>Tamanho servido por unidade</label><select className="select" name="servingMilliliters" defaultValue={initialMilliliters}><option value="300">300 ml</option><option value="500">500 ml</option></select></div>
+        <div className="field"><label>Tamanho servido por unidade</label><select className="select" name="servingMilliliters" defaultValue={initialMilliliters}><option value="190">190 ml</option><option value="300">300 ml</option><option value="500">500 ml</option></select></div>
         <div className="draft-stock-summary"><Beer size={20}/><div><strong>{mode==="DRAFT_BEER"?"Estoque de CHOPP CERVEJA":"Estoque de CHOPP VINHO"}</strong><small>Saldo atual: {Number(selectedPool?.stockQuantity??0).toLocaleString("pt-BR",{maximumFractionDigits:3})} L. Cada venda baixará o volume escolhido acima.</small></div></div>
       </div>}
       {mode==="UNLIMITED"&&<div className="alert alert-info">Este produto não terá saldo nem estoque mínimo.</div>}

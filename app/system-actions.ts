@@ -336,7 +336,7 @@ export async function createProductAction(formData: FormData) {
   try {
     if(isDraft){
       const milliliters=Math.trunc(numberValue(formData.get("servingMilliliters")));
-      if(![300,500].includes(milliliters)) throw new Error("Escolha o tamanho de 300 ml ou 500 ml.");
+      if(![190,300,500].includes(milliliters)) throw new Error("Escolha o tamanho de 190 ml, 300 ml ou 500 ml.");
       stockPerSaleUnit=milliliters/1000;
     }else stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit);
   }
@@ -393,7 +393,7 @@ export async function updateProductAction(formData: FormData) {
   try {
     if(isDraft){
       const milliliters=Math.trunc(numberValue(formData.get("servingMilliliters")));
-      if(![300,500].includes(milliliters)) throw new Error("Escolha o tamanho de 300 ml ou 500 ml.");
+      if(![190,300,500].includes(milliliters)) throw new Error("Escolha o tamanho de 190 ml, 300 ml ou 500 ml.");
       stockPerSaleUnit=milliliters/1000;
     }else stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit);
   }
@@ -487,21 +487,24 @@ export async function addDraftKegAction(formData: FormData) {
 export async function adjustStockAction(formData: FormData) {
   const user = await requirePermission("STOCK");
   const productId = positiveId(formData.get("productId"));
-  const quantity = quantityValue(formData.get("quantity"));
-  if (quantity === 0) fail("/estoque", "Informe uma quantidade diferente de zero.");
+  const movementType = String(formData.get("movementType") ?? "");
+  const amount = Math.abs(quantityValue(formData.get("quantity")));
+  if (!["ENTRY","EXIT"].includes(movementType)) fail("/estoque", "Escolha entrada ou saída de estoque.");
+  if (amount === 0) fail("/estoque", "Informe uma quantidade maior que zero.");
+  const quantity = movementType === "EXIT" ? -amount : amount;
   try {
     await transaction(async (client) => {
-      const current = await client.query<{ name:string;stock_pool_id:number;stock_quantity:number|string;unlimited:boolean }>("SELECT p.name,p.stock_pool_id,sp.stock_quantity,sp.unlimited FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.deleted_at IS NULL FOR UPDATE OF p,sp", [productId]);
+      const current = await client.query<{ name:string;stock_pool_id:number;stock_quantity:number|string;unlimited:boolean;sale_unit:string }>("SELECT p.name,p.stock_pool_id,sp.stock_quantity,sp.unlimited,sp.sale_unit FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.deleted_at IS NULL FOR UPDATE OF p,sp", [productId]);
       if (!current.rows[0]) throw new Error("Produto não encontrado.");
       if (current.rows[0].unlimited) throw new Error("Produtos com estoque ilimitado não recebem ajuste de saldo.");
       if (Number(current.rows[0].stock_quantity) + quantity < 0) throw new Error("O ajuste deixaria o estoque negativo.");
       const newStock = Number(current.rows[0].stock_quantity) + quantity;
       await client.query("UPDATE stock_pools SET stock_quantity=$1,updated_at=NOW() WHERE id=$2", [newStock, current.rows[0].stock_pool_id]);
       await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,user_id) VALUES ($1,$2,$3,'MANUAL_ADJUSTMENT',$4)", [productId, current.rows[0].stock_pool_id, quantity, user.id]);
-      await auditLog({ userId:user.id, action:"STOCK_ADJUSTED", entityType:"STOCK_POOL", entityId:current.rows[0].stock_pool_id, description:`Ajustou o estoque de ${current.rows[0].name} em ${quantity > 0 ? "+" : ""}${quantity}. Novo saldo: ${newStock}.`, metadata:{ productId,stockPoolId:current.rows[0].stock_pool_id,quantity,previousStock:current.rows[0].stock_quantity,newStock } }, client);
+      await auditLog({ userId:user.id, action:"STOCK_ADJUSTED", entityType:"STOCK_POOL", entityId:current.rows[0].stock_pool_id, description:`Registrou ${movementType === "ENTRY" ? "entrada" : "saída"} de ${amount} ${current.rows[0].sale_unit} no estoque de ${current.rows[0].name}. Novo saldo: ${newStock} ${current.rows[0].sale_unit}.`, metadata:{ productId,stockPoolId:current.rows[0].stock_pool_id,movementType,quantity,previousStock:current.rows[0].stock_quantity,newStock,saleUnit:current.rows[0].sale_unit } }, client);
     });
   } catch (error) { fail("/estoque", error instanceof Error ? error.message : "Não foi possível ajustar o estoque."); }
-  revalidatePath("/estoque");
+  revalidatePath("/estoque"); revalidatePath("/produtos"); revalidatePath("/comandas"); revalidatePath("/painel");
   redirect("/estoque");
 }
 
