@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { InfinityIcon, Link2, Unlink } from "lucide-react";
 
 export type StockLinkOption = {
@@ -50,10 +50,10 @@ export function ProductStockFields({
   const [linked,setLinked]=useState(Boolean(initialLinkedProductId));
   const [sourceId,setSourceId]=useState(initialLinkedProductId ? String(initialLinkedProductId) : "");
   const [unlimited,setUnlimited]=useState(initialUnlimited);
-  const filteredOptions=useMemo(()=>options.filter((option)=>option.saleUnit===saleUnit),[options,saleUnit]);
   const source=options.find((option)=>String(option.id)===sourceId);
   const changingPool=linked&&Boolean(source)&&source?.stockPoolId!==currentPoolId;
   const stockLocked=linked&&(mode==="create"||changingPool);
+  const preserveStoredFactor=String(storedStockFactor)!==""&&saleUnit===initialSaleUnit;
 
   function toggleLink(){
     setLinked((value)=>!value);
@@ -61,15 +61,21 @@ export function ProductStockFields({
     else setUnlimited(false);
   }
 
+  function selectStockSource(value:string){
+    setSourceId(value);
+    const selected=options.find((option)=>String(option.id)===value);
+    if(selected) setSaleUnit(selected.saleUnit);
+  }
+
   return <>
     <div className="field"><label>Unidade do estoque</label><select className="select" name="saleUnit" value={saleUnit} onChange={(event)=>{setSaleUnit(event.target.value);setSourceId("");setLinked(false);}}>{units.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select><small>Esta medida aparece somente no controle interno de estoque.</small></div>
-    {String(storedStockFactor)!==""&&<input type="hidden" name="stockPerSaleUnit" value={String(storedStockFactor)}/>}
+    {preserveStoredFactor&&<input type="hidden" name="stockPerSaleUnit" value={String(storedStockFactor)}/>}
 
     <section className="stock-link-panel span-2">
       <div className="stock-link-head"><div><strong>Controle de estoque</strong><small>Use um saldo próprio, compartilhe com outro produto ou marque como ilimitado.</small></div><button className={`btn ${linked?"btn-light":"btn-primary"}`} type="button" onClick={toggleLink}>{linked?<><Unlink size={16}/> Usar estoque separado</>:<><Link2 size={16}/> Vincular estoque</>}</button></div>
       <input type="hidden" name="stockLinkEnabled" value={linked?"true":"false"}/>
-      {linked&&<div className="field stock-source-field"><label>Produto que fornecerá o estoque</label><select className="select" name="stockSourceProductId" value={sourceId} onChange={(event)=>setSourceId(event.target.value)} required><option value="">Selecione o produto</option>{filteredOptions.map((option)=><option key={option.id} value={option.id}>{option.name}{option.unlimited?" — ilimitado":` — saldo ${Number(option.stockQuantity).toLocaleString("pt-BR",{maximumFractionDigits:3})}`}</option>)}</select><small>Os cadastros continuam separados, mas todas as baixas usam o mesmo saldo.</small></div>}
-      {linked&&filteredOptions.length===0&&<div className="alert alert-info">Ainda não há outro produto com esta forma de controle.</div>}
+      {linked&&<div className="field stock-source-field"><label>Produto que fornecerá o estoque</label><select className="select" name="stockSourceProductId" value={sourceId} onChange={(event)=>selectStockSource(event.target.value)} required><option value="">Selecione o produto</option>{options.map((option)=><option key={option.id} value={option.id}>{option.name}{option.unlimited?" — ilimitado":` — saldo ${Number(option.stockQuantity).toLocaleString("pt-BR",{maximumFractionDigits:3})} ${option.saleUnit}`}</option>)}</select><small>Todos os produtos cadastrados aparecem aqui. Ao selecionar um, a unidade e o saldo desse estoque serão adotados automaticamente.</small></div>}
+      {linked&&options.length===0&&<div className="alert alert-info">Ainda não há outro produto cadastrado para vincular.</div>}
       {changingPool&&<div className="alert alert-info">Ao salvar, este produto passará a usar o saldo selecionado. Os campos de quantidade e mínimo abaixo não serão aplicados.</div>}
     </section>
 

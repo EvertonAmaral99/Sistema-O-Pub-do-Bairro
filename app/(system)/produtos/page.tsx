@@ -32,7 +32,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     query<ProductRow>(`SELECT p.id,p.name,p.category,p.price_cents,sp.stock_quantity,sp.min_stock,p.destination,p.sale_unit,p.stock_per_sale_unit,p.stock_pool_id,sp.unlimited AS stock_unlimited,p.active,
       (SELECT COUNT(*) FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id)::text AS stock_pool_products,
       (p.image_data IS NOT NULL) AS has_image,p.image_updated_at FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id ORDER BY p.active DESC,p.category,p.name`),
-    query<{id:number;name:string;stock_pool_id:number;sale_unit:string;stock_quantity:number|string;min_stock:number|string;unlimited:boolean}>(`SELECT p.id,p.name,p.stock_pool_id,sp.sale_unit,sp.stock_quantity,sp.min_stock,sp.unlimited FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.active=TRUE ORDER BY p.name`),
+    query<{id:number;name:string;stock_pool_id:number;sale_unit:string;stock_quantity:number|string;min_stock:number|string;unlimited:boolean}>(`SELECT p.id,p.name,p.stock_pool_id,sp.sale_unit,sp.stock_quantity,sp.min_stock,sp.unlimited FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id ORDER BY p.active DESC,p.name`),
   ]);
   const stockOptions:StockLinkOption[]=stockOptionsResult.rows.map((option)=>({id:option.id,name:option.name,stockPoolId:option.stock_pool_id,saleUnit:option.sale_unit,stockQuantity:option.stock_quantity,minStock:option.min_stock,unlimited:option.unlimited}));
   const area: Record<string,string> = { KITCHEN:"Cozinha",BAR:"Bar",DIRECT:"Entrega direta" };
