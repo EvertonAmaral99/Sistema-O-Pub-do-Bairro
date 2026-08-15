@@ -15,7 +15,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     query<{ open_commands: string; today_sales: string; low_stock: string; prep_items: string }>(`SELECT
       (SELECT COUNT(*) FROM commands WHERE status='OPEN')::text AS open_commands,
       (SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE status='COMPLETED' AND created_at >= date_trunc('day',NOW()))::text AS today_sales,
-      (SELECT COUNT(*) FROM products WHERE active=TRUE AND stock_quantity<=min_stock)::text AS low_stock,
+      (SELECT COUNT(*) FROM stock_pools sp WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock AND EXISTS(SELECT 1 FROM products p WHERE p.stock_pool_id=sp.id AND p.active=TRUE))::text AS low_stock,
       (SELECT COUNT(*) FROM order_items WHERE status IN ('SENT','PREPARING','READY'))::text AS prep_items`),
     query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; total: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,tl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
       COALESCE(SUM(oi.unit_price_cents*oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS total
