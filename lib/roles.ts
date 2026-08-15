@@ -28,6 +28,10 @@ export function isManagementRole(role: Role) {
   return role === "ADMIN" || role === "MANAGER";
 }
 
+export function canManageCommand(role: Role) {
+  return role === "ADMIN" || role === "MANAGER" || role === "CASHIER";
+}
+
 export function isPermission(value: string): value is Permission {
   return permissionKeys.includes(value as Permission);
 }

@@ -5,13 +5,15 @@ import { PriorityInfo } from "@/components/priority-info";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
+import { canManageCommand } from "@/lib/roles";
 import { PaymentForm } from "@/components/payment-form";
 import { CommandProductPicker, type CommandProduct } from "@/components/command-product-picker";
 
 type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ erro?: string }> };
 
 export default async function CommandDetailPage({ params, searchParams }: Params) {
-  await requirePermission("COMMANDS");
+  const user=await requirePermission("COMMANDS");
+  const canManage=canManageCommand(user.role);
   const commandId = Number((await params).id);
   const { erro } = await searchParams;
   const commandResult = await query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; notes: string | null; status: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.notes,c.status,c.priority,c.priority_note FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1`, [commandId]);
@@ -47,7 +49,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
           {activeItems.length === 0 ? <div className="empty" style={{ padding: "28px 12px" }}>Adicione o primeiro produto.</div> : <div className="form-stack">
             {activeItems.map((item) => <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, borderBottom: "1px solid var(--line)", paddingBottom: 11 }}>
               <div><strong>{formatQuantity(item.quantity,item.display_unit)} · {item.product_name}</strong><div style={{ marginTop: 5 }}><span className={`badge ${item.status === "PENDING" ? "badge-amber" : item.status === "READY" ? "badge-green" : "badge-blue"}`}>{statusLabel[item.status]}</span></div></div>
-              <div style={{ textAlign: "right" }}><span className="money">{formatMoney(item.unit_price_cents * Number(item.quantity))}</span>{command.status === "OPEN" && <form action={removeItemAction} style={{ marginTop: 6 }}><input type="hidden" name="commandId" value={commandId}/><input type="hidden" name="itemId" value={item.id}/><button className="btn btn-danger btn-small" type="submit" title="Remover item"><MinusCircle size={14}/></button></form>}</div>
+              <div style={{ textAlign: "right" }}><span className="money">{formatMoney(item.unit_price_cents * Number(item.quantity))}</span>{command.status === "OPEN" && canManage && <form action={removeItemAction} style={{ marginTop: 6 }}><input type="hidden" name="commandId" value={commandId}/><input type="hidden" name="itemId" value={item.id}/><button className="btn btn-danger btn-small" type="submit" title="Remover item"><MinusCircle size={14}/></button></form>}</div>
             </div>)}
           </div>}
           <div className="divider"/><div className="total-row grand"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div>
@@ -58,10 +60,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
               <button className="btn btn-dark" type="submit" disabled={!hasPrepPending}><Send size={16}/> Enviar e imprimir cozinha</button>
             </form>
             <div className="divider"/>
-            <h3>Fechar comanda</h3>
-            <PaymentForm commandId={commandId} subtotal={subtotal}/>
-            <div className="divider"/>
-            <details className="cancel-command"><summary>Cancelar esta comanda</summary><form action={cancelCommandAction} className="form-stack"><input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Motivo do cancelamento</label><input className="input" name="reason" minLength={3} required/></div><button className="btn btn-danger" type="submit"><XCircle size={16}/> Cancelar comanda e devolver itens ao estoque</button></form></details>
+            {canManage?<><h3>Fechar comanda</h3><PaymentForm commandId={commandId} subtotal={subtotal}/><div className="divider"/><details className="cancel-command"><summary>Cancelar esta comanda</summary><form action={cancelCommandAction} className="form-stack"><input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Motivo do cancelamento</label><input className="input" name="reason" minLength={3} required/></div><button className="btn btn-danger" type="submit"><XCircle size={16}/> Cancelar comanda e devolver itens ao estoque</button></form></details></>:<div className="permission-lock"><span>Finalizar, cancelar ou alterar itens já lançados é permitido somente para Caixa, Gerente e Administrador.</span></div>}
           </>}
         </aside>
       </div>

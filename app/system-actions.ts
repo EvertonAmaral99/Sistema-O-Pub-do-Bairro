@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auditLog } from "@/lib/audit";
 import { hashPassword, requirePermission, requireRole, requireUser, verifyPassword } from "@/lib/auth";
 import { transaction } from "@/lib/db";
-import { defaultPermissionsByRole, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
+import { canManageCommand, defaultPermissionsByRole, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
 
 function numberValue(value: FormDataEntryValue | null, fallback = 0) {
   const parsed = Number(String(value ?? "").replace(",", "."));
@@ -175,6 +175,7 @@ export async function removeItemAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandId = positiveId(formData.get("commandId"));
   const itemId = positiveId(formData.get("itemId"));
+  if (!canManageCommand(user.role)) fail(`/comandas/${commandId}`, "Somente Caixa, Gerente ou Administrador pode alterar itens já lançados.");
   try {
     await transaction(async (client) => {
       const item = await client.query<{ product_id:number;stock_pool_id:number;product_name:string;quantity:number|string;stock_quantity_used:number|string;sale_unit:string;status:string;command_number:number;display_label:string }>("SELECT oi.product_id,oi.stock_pool_id,oi.product_name,oi.quantity,oi.stock_quantity_used,oi.sale_unit,oi.status,c.command_number,cl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE oi.id=$1 AND oi.command_id=$2 AND c.status='OPEN' FOR UPDATE OF oi,c", [itemId, commandId]);
@@ -258,6 +259,7 @@ export async function updateKitchenStatusAction(formData: FormData) {
 export async function closeCommandAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandId = positiveId(formData.get("commandId"));
+  if (!canManageCommand(user.role)) fail(`/comandas/${commandId}`, "Somente Caixa, Gerente ou Administrador pode finalizar a comanda.");
   const format = String(formData.get("format") ?? "80");
   const paymentValues = [["CASH",cents(formData.get("cash"))],["PIX",cents(formData.get("pix"))],["DEBIT",cents(formData.get("debit"))],["CREDIT",cents(formData.get("credit"))],["STAFF_VOUCHER",cents(formData.get("staffVoucher"))]] as const;
   const splitCount = Math.max(1, Math.trunc(numberValue(formData.get("splitCount"), 1)));
@@ -293,6 +295,7 @@ export async function closeCommandAction(formData: FormData) {
 export async function cancelCommandAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandId = positiveId(formData.get("commandId"));
+  if (!canManageCommand(user.role)) fail(`/comandas/${commandId}`, "Somente Caixa, Gerente ou Administrador pode cancelar a comanda.");
   const reason = String(formData.get("reason") ?? "").trim();
   if (reason.length < 3) fail(`/comandas/${commandId}`, "Informe o motivo do cancelamento.");
   try {
