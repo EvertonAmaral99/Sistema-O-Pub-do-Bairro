@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { CircleCheck, CircleDollarSign, Printer, Users } from "lucide-react";
 import { closeCommandAction } from "@/app/system-actions";
+import { PrintActionForm } from "@/components/print-action-form";
 
 function toCents(value: string) { const n=Number(value||0); return Number.isFinite(n)?Math.round(n*100):0; }
 function brl(cents:number){ return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(cents/100); }
@@ -28,7 +29,7 @@ export function PaymentForm({commandId,subtotal}:{commandId:number;subtotal:numb
   },[discount,service,cash,pix,debit,credit,staffVoucher,splitCount,subtotal]);
   const paymentComplete=calculation.total>0&&calculation.remaining===0;
 
-  return <form action={closeCommandAction} target="_blank" className="form-stack">
+  return <PrintActionForm action={closeCommandAction} className="form-stack">
     <input type="hidden" name="commandId" value={commandId}/>
     <div className="form-grid"><div className="field"><label>Desconto (R$)</label><input className="input" name="discount" type="number" min="0" step="0.01" value={discount} onChange={e=>setDiscount(e.target.value)}/></div><div className="field"><label>Taxa de serviço (%) — opcional</label><input className="input" name="servicePercent" type="number" min="0" max="100" step="0.01" value={service} onChange={e=>setService(e.target.value)}/></div></div>
     <div className="card payment-summary"><div className="totals"><div className="total-row"><span>Subtotal</span><span>{brl(subtotal)}</span></div>{calculation.discountCents>0&&<div className="total-row"><span>Desconto</span><span>- {brl(calculation.discountCents)}</span></div>}{calculation.serviceCents>0&&<div className="total-row"><span>Taxa</span><span>{brl(calculation.serviceCents)}</span></div>}<div className="total-row grand"><span>Total</span><span>{brl(calculation.total)}</span></div></div></div>
@@ -51,5 +52,5 @@ export function PaymentForm({commandId,subtotal}:{commandId:number;subtotal:numb
       <div className="field"><label>Formato da notinha</label><select className="select" name="format" defaultValue="80"><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
     </div>
     <button className="btn btn-primary" type="submit" disabled={!paymentComplete}><Printer size={16}/> Finalizar e abrir notinha</button>
-  </form>;
+  </PrintActionForm>;
 }

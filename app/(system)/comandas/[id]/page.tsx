@@ -8,6 +8,7 @@ import { requirePermission } from "@/lib/auth";
 import { canManageCommand } from "@/lib/roles";
 import { PaymentForm } from "@/components/payment-form";
 import { CommandProductPicker, type CommandProduct } from "@/components/command-product-picker";
+import { PrintActionForm } from "@/components/print-action-form";
 
 type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ erro?: string }> };
 
@@ -55,10 +56,10 @@ export default async function CommandDetailPage({ params, searchParams }: Params
           <div className="divider"/><div className="total-row grand"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div>
           {command.status === "OPEN" && <>
             <div className="divider"/>
-            <form action={sendKitchenAction} target="_blank" className="form-stack">
+            <PrintActionForm action={sendKitchenAction} className="form-stack">
               <input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Formato do pedido</label><select className="select" name="format" defaultValue="80"><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
               <button className="btn btn-dark" type="submit" disabled={!hasPrepPending}><Send size={16}/> Enviar e imprimir cozinha</button>
-            </form>
+            </PrintActionForm>
             <div className="divider"/>
             {canManage?<><h3>Fechar comanda</h3><PaymentForm commandId={commandId} subtotal={subtotal}/><div className="divider"/><details className="cancel-command"><summary>Cancelar esta comanda</summary><form action={cancelCommandAction} className="form-stack"><input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Motivo do cancelamento</label><input className="input" name="reason" minLength={3} required/></div><button className="btn btn-danger" type="submit"><XCircle size={16}/> Cancelar comanda e devolver itens ao estoque</button></form></details></>:<div className="permission-lock"><span>Finalizar, cancelar ou alterar itens já lançados é permitido somente para Caixa, Gerente e Administrador.</span></div>}
           </>}

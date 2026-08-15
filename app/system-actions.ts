@@ -85,9 +85,9 @@ export async function closeCashAction(formData: FormData) {
       await client.query("UPDATE cash_sessions SET status='CLOSED',closed_by=$1,closed_at=NOW(),closing_amount_cents=$2,expected_amount_cents=$3,notes=$4 WHERE id=$5 AND status='OPEN'", [user.id, closingAmount, expected, notes, cashId]);
       await auditLog({ userId:user.id, action:"CASH_CLOSED", entityType:"CASH", entityId:cashId, description:`Fechou o caixa. Contado: ${moneyText(closingAmount)}; esperado: ${moneyText(expected)}.`, metadata:{ closingAmount, expected } }, client);
     });
-  } catch (error) { fail("/caixa", error instanceof Error ? error.message : "Não foi possível fechar o caixa."); }
+  } catch (error) { return {error:error instanceof Error ? error.message : "Não foi possível fechar o caixa."}; }
   revalidatePath("/caixa");
-  redirect(`/imprimir/caixa/${cashId}?formato=${encodeURIComponent(format)}`);
+  return {url:`/imprimir/caixa/${cashId}?formato=${encodeURIComponent(format)}`};
 }
 
 export async function openCommandAction(formData: FormData) {
@@ -235,10 +235,10 @@ export async function sendKitchenAction(formData: FormData) {
       await auditLog({ userId:user.id, action:"KITCHEN_SENT", entityType:"KITCHEN_TICKET", entityId:id, description:`Enviou ${items.rowCount} item(ns) da comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}, para cozinha/bar.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, itemCount:items.rowCount } }, client);
       return id;
     });
-  } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível enviar o pedido."); }
+  } catch (error) { return {error:error instanceof Error ? error.message : "Não foi possível enviar o pedido."}; }
   revalidatePath(`/comandas/${commandId}`);
   revalidatePath("/cozinha");
-  redirect(`/imprimir/cozinha/${ticketId}?formato=${encodeURIComponent(format)}`);
+  return {url:`/imprimir/cozinha/${ticketId}?formato=${encodeURIComponent(format)}`};
 }
 
 export async function updateKitchenStatusAction(formData: FormData) {
@@ -259,7 +259,7 @@ export async function updateKitchenStatusAction(formData: FormData) {
 export async function closeCommandAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandId = positiveId(formData.get("commandId"));
-  if (!canManageCommand(user.role)) fail(`/comandas/${commandId}`, "Somente Caixa, Gerente ou Administrador pode finalizar a comanda.");
+  if (!canManageCommand(user.role)) return {error:"Somente Caixa, Gerente ou Administrador pode finalizar a comanda."};
   const format = String(formData.get("format") ?? "80");
   const paymentValues = [["CASH",cents(formData.get("cash"))],["PIX",cents(formData.get("pix"))],["DEBIT",cents(formData.get("debit"))],["CREDIT",cents(formData.get("credit"))],["STAFF_VOUCHER",cents(formData.get("staffVoucher"))]] as const;
   const splitCount = Math.max(1, Math.trunc(numberValue(formData.get("splitCount"), 1)));
@@ -285,11 +285,11 @@ export async function closeCommandAction(formData: FormData) {
       await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}, por ${moneyText(total)}.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, subtotal, discount, service, total, splitCount } }, client);
       return sale.rows[0].id;
     });
-  } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível fechar a comanda."); }
+  } catch (error) { return {error:error instanceof Error ? error.message : "Não foi possível fechar a comanda."}; }
   revalidatePath("/comandas");
   revalidatePath("/caixa");
   revalidatePath("/painel");
-  redirect(`/imprimir/venda/${saleId}?formato=${encodeURIComponent(format)}`);
+  return {url:`/imprimir/venda/${saleId}?formato=${encodeURIComponent(format)}`};
 }
 
 export async function cancelCommandAction(formData: FormData) {

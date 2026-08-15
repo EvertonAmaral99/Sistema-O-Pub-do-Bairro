@@ -289,6 +289,7 @@ tr:hover td { background:#fff3f4; }
 .receipt-80 .print-logo { width:58px; height:58px; }
 .receipt-58 .print-logo { width:46px; height:46px; }
 .print-actions { position:fixed; right:18px; top:18px; display:flex; gap:8px; }
+.print-action-pending { display:block; color:var(--muted); text-align:center; }
 .print-priority { display:grid; gap:5px; border:3px solid #111; padding:9px; margin:8px 0 12px; text-align:center; }
 .print-priority strong { font-size:18px; }
 
