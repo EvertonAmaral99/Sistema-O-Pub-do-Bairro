@@ -40,11 +40,11 @@ export function CashClosingForm({
 }) {
   const expectedCash = openingAmount + payments.cash;
   const [values, setValues] = useState<Record<ConfirmationKey, string>>({
-    closingAmount: "",
-    confirmedPix: "",
-    confirmedDebit: "",
-    confirmedCredit: "",
-    confirmedStaffVoucher: "",
+    closingAmount: expectedCash === 0 ? "0.00" : "",
+    confirmedPix: payments.pix === 0 ? "0.00" : "",
+    confirmedDebit: payments.debit === 0 ? "0.00" : "",
+    confirmedCredit: payments.credit === 0 ? "0.00" : "",
+    confirmedStaffVoucher: payments.staffVoucher === 0 ? "0.00" : "",
   });
 
   const fields: Array<{ key: ConfirmationKey; label: string; expected: number; help: string }> = [
@@ -128,10 +128,14 @@ export function CashClosingForm({
             <option value="a4">Folha A4</option>
           </select>
         </div>
-        <button className="btn btn-dark" type="submit" disabled={!readyToClose}>
+        <button className="btn btn-dark" type="submit">
           <Printer size={16} /> Fechar e imprimir relatório
         </button>
-        {!readyToClose && <small className="cash-closing-blocked">Confira todos os valores para liberar o fechamento.</small>}
+        {!readyToClose && (
+          <small className="cash-closing-blocked">
+            Preencha os valores conferidos. Ao continuar, o sistema validará todas as formas de pagamento e não fechará o caixa se houver alguma divergência.
+          </small>
+        )}
       </PrintActionForm>
     </section>
   );
