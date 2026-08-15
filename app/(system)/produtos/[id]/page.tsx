@@ -10,7 +10,7 @@ import { ProductStockFields, type DraftStockPool } from "@/components/product-st
 import { isManagementRole } from "@/lib/roles";
 
 type ProductRow = {
-  id:number; name:string; category:string; price_cents:number; stock_quantity:number|string; min_stock:number|string;
+  id:number; name:string; category:string; cost_cents:number; price_cents:number; stock_quantity:number|string; min_stock:number|string;
   destination:string; sale_unit:string; stock_per_sale_unit:number|string; stock_pool_id:number; stock_kind:string|null; stock_unlimited:boolean; active:boolean; has_image:boolean; image_updated_at:string|null;
 };
 
@@ -20,7 +20,7 @@ export default async function EditProductPage({ params, searchParams }: { params
   const { erro } = await searchParams;
   if (!Number.isInteger(productId) || productId < 1) notFound();
   const [result,draftPoolsResult] = await Promise.all([
-    query<ProductRow>(`SELECT p.id,p.name,p.category,p.price_cents,sp.stock_quantity,sp.min_stock,p.destination,p.sale_unit,p.stock_per_sale_unit,p.stock_pool_id,sp.stock_kind,sp.unlimited AS stock_unlimited,p.active,
+    query<ProductRow>(`SELECT p.id,p.name,p.category,p.cost_cents,p.price_cents,sp.stock_quantity,sp.min_stock,p.destination,p.sale_unit,p.stock_per_sale_unit,p.stock_pool_id,sp.stock_kind,sp.unlimited AS stock_unlimited,p.active,
       (p.image_data IS NOT NULL) AS has_image,p.image_updated_at FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.deleted_at IS NULL`,[productId]),
     query<{stock_kind:"DRAFT_BEER"|"DRAFT_WINE";stock_quantity:number|string}>(`SELECT stock_kind,stock_quantity FROM stock_pools WHERE stock_kind IN ('DRAFT_BEER','DRAFT_WINE') ORDER BY stock_kind`),
   ]);
@@ -36,7 +36,8 @@ export default async function EditProductPage({ params, searchParams }: { params
         <input type="hidden" name="productId" value={product.id}/>
         <div className="field"><label>Nome</label><input className="input uppercase-input" name="name" defaultValue={product.name} required/><small>O nome será salvo automaticamente em caixa alta.</small></div>
         <div className="field"><label>Categoria</label><select className="select" name="category" defaultValue={product.category} required><option value="Bebidas">Bebidas</option><option value="Chopes e cervejas">Chopes e cervejas</option><option value="Drinks">Drinks</option><option value="Porções">Porções</option><option value="Lanches">Lanches</option><option value="Sobremesas">Sobremesas</option><option value="Outros">Outros</option></select></div>
-        <div className="field"><label>Preço (R$)</label><input className="input" name="price" type="number" min="0" step="0.01" defaultValue={(Number(product.price_cents)/100).toFixed(2)} required/></div>
+        <div className="field"><label>Preço de venda (R$)</label><input className="input" name="price" type="number" min="0" step="0.01" defaultValue={(Number(product.price_cents)/100).toFixed(2)} required/></div>
+        <div className="field"><label>Custo por unidade (R$)</label><input className="input" name="cost" type="number" min="0" step="0.01" defaultValue={(Number(product.cost_cents)/100).toFixed(2)} required/><small>Informe o custo de uma unidade vendida deste produto.</small></div>
         <div className="field"><label>Setor</label><select className="select" name="destination" defaultValue={product.destination}><option value="DIRECT">Entrega direta pelo garçom</option><option value="BAR">Bar — entrega pelo garçom</option><option value="KITCHEN">Cozinha — requer preparo</option></select><small>Somente produtos do setor Cozinha serão enviados para a tela de preparo.</small></div>
         <ProductStockFields draftPools={draftPools} initialStockKind={product.stock_kind} initialSaleUnit={product.sale_unit} storedStockFactor={product.stock_per_sale_unit} initialStock={product.stock_quantity} initialMinStock={product.min_stock} initialUnlimited={product.stock_unlimited}/>
         <div className="field"><label>Nova foto</label><input className="input file-input" name="image" type="file" accept="image/jpeg,image/png,image/webp"/><small>Deixe sem arquivo para manter a foto atual.</small></div>

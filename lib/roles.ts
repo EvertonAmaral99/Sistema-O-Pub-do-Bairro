@@ -2,10 +2,11 @@ export type Role = "ADMIN" | "MANAGER" | "CASHIER" | "KITCHEN" | "WAITER" | "ATT
 export const permissionConfig = [
   { key: "DASHBOARD", label: "Visão geral", description: "Painel com resumo do movimento" },
   { key: "COMMANDS", label: "Comandas", description: "Abrir, lançar e fechar comandas" },
-  { key: "KITCHEN", label: "Cozinha e bar", description: "Visualizar e atualizar pedidos" },
+  { key: "KITCHEN", label: "Cozinha", description: "Visualizar e atualizar itens que precisam de preparo" },
   { key: "PRODUCTS", label: "Produtos", description: "Cadastrar produtos e preços" },
   { key: "STOCK", label: "Estoque", description: "Consultar e ajustar quantidades" },
   { key: "CASH", label: "Caixa", description: "Área financeira exclusiva da gestão", managementOnly: true },
+  { key: "FINANCE", label: "Financeiro", description: "Custos, margens, lucro e valor do estoque", managementOnly: true },
   { key: "REPORTS", label: "Relatórios", description: "Valores e resultados exclusivos da gestão", managementOnly: true },
 ] as const;
 
@@ -37,14 +38,14 @@ export function isPermission(value: string): value is Permission {
 }
 
 export function hasPermission(user: SessionUser, permission: Permission) {
-  if (["CASH","REPORTS"].includes(permission) && !isManagementRole(user.role)) return false;
+  if (["CASH","FINANCE","REPORTS"].includes(permission) && !isManagementRole(user.role)) return false;
   return user.role === "ADMIN" || user.permissions.includes(permission);
 }
 
 export function firstAllowedPath(user: SessionUser) {
   const routes: Array<[Permission, string]> = [
     ["DASHBOARD", "/painel"], ["COMMANDS", "/comandas"], ["KITCHEN", "/cozinha"],
-    ["PRODUCTS", "/produtos"], ["STOCK", "/estoque"], ["CASH", "/caixa"], ["REPORTS", "/relatorios"],
+    ["PRODUCTS", "/produtos"], ["STOCK", "/estoque"], ["CASH", "/caixa"], ["FINANCE", "/financeiro"], ["REPORTS", "/relatorios"],
   ];
   return routes.find(([permission]) => hasPermission(user, permission))?.[1] ?? "/configuracoes";
 }

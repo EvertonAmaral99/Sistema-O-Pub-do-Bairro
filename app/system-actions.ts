@@ -171,7 +171,7 @@ export async function addItemAction(formData: FormData) {
     await transaction(async (client) => {
       const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda fechada.");
-      const product = await client.query<{ name:string;price_cents:number;stock_pool_id:number;stock_quantity:number|string;stock_unlimited:boolean;destination:string;sale_unit:string;stock_per_sale_unit:number|string }>("SELECT p.name,p.price_cents,p.stock_pool_id,sp.stock_quantity,sp.unlimited AS stock_unlimited,p.destination,p.sale_unit,p.stock_per_sale_unit FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.active=TRUE AND p.deleted_at IS NULL AND p.name NOT ILIKE '%ESTOQUE%' FOR UPDATE OF p,sp", [productId]);
+      const product = await client.query<{ name:string;price_cents:number;cost_cents:number;stock_pool_id:number;stock_quantity:number|string;stock_unlimited:boolean;destination:string;sale_unit:string;stock_per_sale_unit:number|string }>("SELECT p.name,p.price_cents,p.cost_cents,p.stock_pool_id,sp.stock_quantity,sp.unlimited AS stock_unlimited,p.destination,p.sale_unit,p.stock_per_sale_unit FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.active=TRUE AND p.deleted_at IS NULL AND p.name NOT ILIKE '%ESTOQUE%' FOR UPDATE OF p,sp", [productId]);
       const item = product.rows[0];
       if (!item) throw new Error("Produto indisponível.");
       const factor = Number(item.stock_per_sale_unit);
@@ -179,7 +179,7 @@ export async function addItemAction(formData: FormData) {
       const stockUsed = item.stock_unlimited ? 0 : Math.round(quantity * factor * 1000) / 1000;
       if (!item.stock_unlimited && Number(item.stock_quantity) < stockUsed) throw new Error(`Estoque insuficiente. Disponível: ${item.stock_quantity} ${item.sale_unit}.`);
       const displayUnit = "UNIT";
-      const inserted = await client.query<{ id:number }>("INSERT INTO order_items (command_id,product_id,stock_pool_id,product_name,unit_price_cents,quantity,stock_quantity_used,destination,sale_unit,display_unit,added_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id", [commandId, productId, item.stock_pool_id, item.name, item.price_cents, quantity, stockUsed, item.destination, item.sale_unit, displayUnit, user.id]);
+      const inserted = await client.query<{ id:number }>("INSERT INTO order_items (command_id,product_id,stock_pool_id,product_name,unit_price_cents,unit_cost_cents,quantity,stock_quantity_used,destination,sale_unit,display_unit,added_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id", [commandId, productId, item.stock_pool_id, item.name, item.price_cents, item.cost_cents, quantity, stockUsed, item.destination, item.sale_unit, displayUnit, user.id]);
       if (!item.stock_unlimited) {
         await client.query("UPDATE stock_pools SET stock_quantity=stock_quantity-$1,updated_at=NOW() WHERE id=$2", [stockUsed, item.stock_pool_id]);
         await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,$3,'ITEM_ADDED',$4,$5)", [productId, item.stock_pool_id, -stockUsed, inserted.rows[0].id, user.id]);
@@ -350,6 +350,7 @@ export async function createProductAction(formData: FormData) {
   const isDraft = stockMode === "DRAFT_BEER" || stockMode === "DRAFT_WINE";
   const saleUnit = isDraft ? "L" : String(formData.get("saleUnit") ?? "UNIT");
   const price = cents(formData.get("price"));
+  const cost = cents(formData.get("cost"));
   const unlimited = stockMode === "UNLIMITED";
   const stock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("stock")));
   const minStock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("minStock")));
@@ -386,8 +387,8 @@ export async function createProductAction(formData: FormData) {
         stockPoolId=pool.rows[0].id;
         stockDescription=effectiveUnlimited?" Estoque ilimitado.":` Estoque inicial: ${effectiveStock} ${saleUnit}; mínimo: ${effectiveMinStock} ${saleUnit}.`;
       }
-      const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,stock_per_sale_unit,stock_pool_id,image_data,image_mime,image_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $10::bytea IS NULL THEN NULL ELSE NOW() END) RETURNING id", [name, category, price, effectiveStock, effectiveMinStock, destination, saleUnit, stockPerSaleUnit, stockPoolId, image?.data??null, image?.mime??null]);
-      await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.${stockDescription}`, metadata:{ category, stock:effectiveStock, minStock:effectiveMinStock, unlimited:effectiveUnlimited, stockMode, stockPoolId, destination, saleUnit, stockPerSaleUnit, hasImage:Boolean(image) } }, client);
+      const created = await client.query<{ id:number }>("INSERT INTO products (name,category,cost_cents,price_cents,stock_quantity,min_stock,destination,sale_unit,stock_per_sale_unit,stock_pool_id,image_data,image_mime,image_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $11::bytea IS NULL THEN NULL ELSE NOW() END) RETURNING id", [name, category, cost, price, effectiveStock, effectiveMinStock, destination, saleUnit, stockPerSaleUnit, stockPoolId, image?.data??null, image?.mime??null]);
+      await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} com custo de ${moneyText(cost)} e venda por ${moneyText(price)}.${stockDescription}`, metadata:{ category, cost, price, stock:effectiveStock, minStock:effectiveMinStock, unlimited:effectiveUnlimited, stockMode, stockPoolId, destination, saleUnit, stockPerSaleUnit, hasImage:Boolean(image) } }, client);
     });
   } catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível cadastrar o produto."); }
   revalidatePath("/produtos");
@@ -405,6 +406,7 @@ export async function updateProductAction(formData: FormData) {
   const isDraft = stockMode === "DRAFT_BEER" || stockMode === "DRAFT_WINE";
   const saleUnit = isDraft ? "L" : String(formData.get("saleUnit") ?? "UNIT");
   const price = cents(formData.get("price"));
+  const cost = cents(formData.get("cost"));
   const unlimited = stockMode === "UNLIMITED";
   const stock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("stock")));
   const minStock = unlimited ? 0 : Math.max(0, quantityValue(formData.get("minStock")));
@@ -425,7 +427,7 @@ export async function updateProductAction(formData: FormData) {
   catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível processar a foto."); }
   try {
     await transaction(async (client) => {
-      const current = await client.query<{name:string;price_cents:number;stock_per_sale_unit:number|string;stock_pool_id:number;stock_kind:string|null;stock_quantity:number|string;min_stock:number|string;stock_unlimited:boolean;stock_sale_unit:string;pool_members:string}>(`SELECT p.name,p.price_cents,p.stock_per_sale_unit,p.stock_pool_id,sp.stock_kind,sp.stock_quantity,sp.min_stock,sp.unlimited AS stock_unlimited,sp.sale_unit AS stock_sale_unit,
+      const current = await client.query<{name:string;price_cents:number;cost_cents:number;stock_per_sale_unit:number|string;stock_pool_id:number;stock_kind:string|null;stock_quantity:number|string;min_stock:number|string;stock_unlimited:boolean;stock_sale_unit:string;pool_members:string}>(`SELECT p.name,p.price_cents,p.cost_cents,p.stock_per_sale_unit,p.stock_pool_id,sp.stock_kind,sp.stock_quantity,sp.min_stock,sp.unlimited AS stock_unlimited,sp.sale_unit AS stock_sale_unit,
         (SELECT COUNT(*)::text FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id AND linked.deleted_at IS NULL) AS pool_members
         FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.deleted_at IS NULL FOR UPDATE OF p,sp`,[productId]);
       if(!current.rows[0]) throw new Error("Produto não encontrado.");
@@ -459,16 +461,38 @@ export async function updateProductAction(formData: FormData) {
         const difference=Math.round((effectiveStock-Number(old.stock_quantity))*1000)/1000;
         if(!effectiveUnlimited&&difference!==0) await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,user_id) VALUES ($1,$2,$3,'PRODUCT_EDIT',$4)",[productId,stockPoolId,difference,user.id]);
       }
-      await client.query(`UPDATE products SET name=$1,category=$2,price_cents=$3,stock_quantity=$4,min_stock=$5,destination=$6,sale_unit=$7,stock_per_sale_unit=$8,stock_pool_id=$9,active=$10,
-        image_data=CASE WHEN $11::boolean THEN NULL WHEN $12::bytea IS NOT NULL THEN $12 ELSE image_data END,
-        image_mime=CASE WHEN $11::boolean THEN NULL WHEN $12::bytea IS NOT NULL THEN $13 ELSE image_mime END,
-        image_updated_at=CASE WHEN $11::boolean THEN NOW() WHEN $12::bytea IS NOT NULL THEN NOW() ELSE image_updated_at END,updated_at=NOW() WHERE id=$14`,
-        [name,category,price,effectiveStock,effectiveMinStock,destination,saleUnit,stockPerSaleUnit,stockPoolId,active,removeImage,image?.data??null,image?.mime??null,productId]);
-      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}.${stockDescription}`,metadata:{name,category,price,stock:effectiveStock,minStock:effectiveMinStock,unlimited:effectiveUnlimited,stockMode,stockPoolId,destination,saleUnit,stockPerSaleUnit,previousStockFactor:old.stock_per_sale_unit,active,imageChanged:Boolean(image)||removeImage}},client);
+      await client.query(`UPDATE products SET name=$1,category=$2,cost_cents=$3,price_cents=$4,stock_quantity=$5,min_stock=$6,destination=$7,sale_unit=$8,stock_per_sale_unit=$9,stock_pool_id=$10,active=$11,
+        image_data=CASE WHEN $12::boolean THEN NULL WHEN $13::bytea IS NOT NULL THEN $13 ELSE image_data END,
+        image_mime=CASE WHEN $12::boolean THEN NULL WHEN $13::bytea IS NOT NULL THEN $14 ELSE image_mime END,
+        image_updated_at=CASE WHEN $12::boolean THEN NOW() WHEN $13::bytea IS NOT NULL THEN NOW() ELSE image_updated_at END,updated_at=NOW() WHERE id=$15`,
+        [name,category,cost,price,effectiveStock,effectiveMinStock,destination,saleUnit,stockPerSaleUnit,stockPoolId,active,removeImage,image?.data??null,image?.mime??null,productId]);
+      if(cost>0) await client.query("UPDATE order_items SET unit_cost_cents=$1 WHERE product_id=$2 AND unit_cost_cents=0",[cost,productId]);
+      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: custo ${moneyText(old.cost_cents)} → ${moneyText(cost)}; venda ${moneyText(old.price_cents)} → ${moneyText(price)}.${stockDescription}`,metadata:{name,category,cost,price,stock:effectiveStock,minStock:effectiveMinStock,unlimited:effectiveUnlimited,stockMode,stockPoolId,destination,saleUnit,stockPerSaleUnit,previousStockFactor:old.stock_per_sale_unit,active,imageChanged:Boolean(image)||removeImage}},client);
     });
   } catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível atualizar o produto."); }
   revalidatePath("/produtos"); revalidatePath(`/produtos/${productId}`); revalidatePath("/estoque"); revalidatePath("/comandas");
   redirect("/produtos");
+}
+
+export async function updateProductFinancialsAction(formData:FormData){
+  const user=await requirePermission("FINANCE");
+  const productId=positiveId(formData.get("productId"));
+  const cost=cents(formData.get("cost"));
+  const price=cents(formData.get("price"));
+  if(cost>0&&price===0) fail("/financeiro","O preço de venda deve ser maior que zero quando há custo cadastrado.");
+  try{
+    await transaction(async(client)=>{
+      const current=await client.query<{name:string;cost_cents:number;price_cents:number}>("SELECT name,cost_cents,price_cents FROM products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",[productId]);
+      if(!current.rows[0]) throw new Error("Produto não encontrado.");
+      const previous=current.rows[0];
+      await client.query("UPDATE products SET cost_cents=$1,price_cents=$2,updated_at=NOW() WHERE id=$3",[cost,price,productId]);
+      if(cost>0) await client.query("UPDATE order_items SET unit_cost_cents=$1 WHERE product_id=$2 AND unit_cost_cents=0",[cost,productId]);
+      const margin=price>0?Math.round(((price-cost)/price)*10000)/100:0;
+      await auditLog({userId:user.id,action:"PRODUCT_FINANCE_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou ${previous.name}: custo ${moneyText(previous.cost_cents)} → ${moneyText(cost)}; venda ${moneyText(previous.price_cents)} → ${moneyText(price)}; margem ${margin.toFixed(2)}%.`,metadata:{previousCost:previous.cost_cents,cost,previousPrice:previous.price_cents,price,margin}},client);
+    });
+  }catch(error){fail("/financeiro",error instanceof Error?error.message:"Não foi possível atualizar os valores do produto.");}
+  revalidatePath("/financeiro");revalidatePath("/produtos");revalidatePath(`/produtos/${productId}`);revalidatePath("/comandas");
+  redirect("/financeiro?sucesso=produto");
 }
 
 export async function deleteProductAction(formData: FormData) {
@@ -642,7 +666,7 @@ export async function updateUserPermissionsAction(formData: FormData) {
       if (!target.rows[0]) throw new Error("Funcionário não encontrado.");
       if (target.rows[0].role === "ADMIN") throw new Error("O acesso de Administradores é sempre completo.");
       if (actor.role === "MANAGER" && target.rows[0].role === "MANAGER") throw new Error("Somente Administradores podem alterar outro Gerente.");
-      const allowed = isManagementRole(target.rows[0].role) ? selected : selected.filter((permission) => !["CASH","REPORTS"].includes(permission));
+      const allowed = isManagementRole(target.rows[0].role) ? selected : selected.filter((permission) => !["CASH","FINANCE","REPORTS"].includes(permission));
       await client.query("DELETE FROM user_permissions WHERE user_id=$1", [userId]);
       for (const permission of allowed) await client.query("INSERT INTO user_permissions (user_id,permission) VALUES ($1,$2)", [userId, permission]);
       const labels = permissionConfig.filter((item) => allowed.includes(item.key)).map((item) => item.label);

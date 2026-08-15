@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, Boxes, CalendarDays, ChefHat, CircleDollarSign, ClipboardList, LayoutDashboard, LogOut, Menu, Package, ScrollText, Settings, X } from "lucide-react";
+import { BarChart3, Boxes, CalendarDays, ChefHat, CircleDollarSign, ClipboardList, LayoutDashboard, LogOut, Menu, Package, ScrollText, Settings, TrendingUp, X } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 import { BrandLogo } from "@/components/brand-logo";
 import type { Permission, Role, SessionUser } from "@/lib/roles";
@@ -13,10 +13,11 @@ type LinkItem = { href: string; label: string; icon: typeof LayoutDashboard; per
 const links: LinkItem[] = [
   { href: "/painel", label: "Visão geral", icon: LayoutDashboard, permission: "DASHBOARD" },
   { href: "/comandas", label: "Comandas", icon: ClipboardList, permission: "COMMANDS" },
-  { href: "/cozinha", label: "Cozinha e bar", icon: ChefHat, permission: "KITCHEN" },
+  { href: "/cozinha", label: "Cozinha", icon: ChefHat, permission: "KITCHEN" },
   { href: "/produtos", label: "Produtos", icon: Package, permission: "PRODUCTS" },
   { href: "/estoque", label: "Estoque", icon: Boxes, permission: "STOCK" },
   { href: "/caixa", label: "Caixa", icon: CircleDollarSign, roles: ["ADMIN", "MANAGER"] },
+  { href: "/financeiro", label: "Financeiro", icon: TrendingUp, permission: "FINANCE" },
   { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
   { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["ADMIN", "MANAGER"] },
   { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN", "MANAGER", "CASHIER", "KITCHEN", "WAITER", "ATTENDANT"] },
