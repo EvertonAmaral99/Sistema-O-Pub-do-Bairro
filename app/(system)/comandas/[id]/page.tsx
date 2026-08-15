@@ -1,7 +1,8 @@
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { ImageIcon, MinusCircle, Send, ShoppingCart, XCircle } from "lucide-react";
-import { addItemAction, cancelCommandAction, removeItemAction, sendKitchenAction } from "@/app/system-actions";
+import { CircleAlert, ImageIcon, MinusCircle, Send, ShoppingCart, XCircle } from "lucide-react";
+import { addItemAction, cancelCommandAction, removeItemAction, sendKitchenAction, updateCommandPriorityAction } from "@/app/system-actions";
+import { PriorityInfo } from "@/components/priority-info";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
@@ -13,7 +14,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
   await requirePermission("COMMANDS");
   const commandId = Number((await params).id);
   const { erro, busca = "" } = await searchParams;
-  const commandResult = await query<{ id: number; command_number: number; table_number: number; customer_name: string | null; opened_at: string; notes: string | null; status: string }>(`SELECT c.id,c.command_number,t.number AS table_number,c.customer_name,c.opened_at,c.notes,c.status FROM commands c JOIN bar_tables t ON t.id=c.table_id WHERE c.id=$1`, [commandId]);
+  const commandResult = await query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; notes: string | null; status: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,tl.display_label AS table_display,c.customer_name,c.opened_at,c.notes,c.status,c.priority,c.priority_note FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1`, [commandId]);
   const command = commandResult.rows[0]; if (!command) notFound();
   const [items, products] = await Promise.all([
     query<{ id: number; product_name: string; quantity: number|string; unit_price_cents: number; status: string; destination: string;sale_unit:string }>("SELECT id,product_name,quantity,unit_price_cents,status,destination,sale_unit FROM order_items WHERE command_id=$1 ORDER BY created_at DESC", [commandId]),
@@ -25,7 +26,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
   const statusLabel: Record<string,string> = { PENDING:"Novo",SENT:"Enviado",PREPARING:"Preparando",READY:"Pronto",DELIVERED:"Entregue",CANCELLED:"Removido" };
   return (
     <>
-      <div className="page-head"><div><p className="eyebrow">Mesa {command.table_number}</p><h2>Comanda #{command.command_number}</h2><p>{command.customer_name || "Cliente não informado"} · Aberta em {formatDateTime(command.opened_at)}</p></div><span className={`badge ${command.status === "OPEN" ? "badge-green" : command.status === "CANCELLED" ? "badge-red" : "badge-gray"}`}>{command.status === "OPEN" ? "Aberta" : command.status === "CANCELLED" ? "Cancelada" : "Finalizada"}</span></div>
+      <div className="page-head"><div><p className="eyebrow">{command.table_display}</p><h2>Comanda #{command.command_number}</h2><p>{command.customer_name || "Cliente não informado"} · Aberta em {formatDateTime(command.opened_at)}</p></div><div className="actions">{command.priority&&<span className="badge badge-red">Prioridade <PriorityInfo note={command.priority_note}/></span>}<span className={`badge ${command.status === "OPEN" ? "badge-green" : command.status === "CANCELLED" ? "badge-red" : "badge-gray"}`}>{command.status === "OPEN" ? "Aberta" : command.status === "CANCELLED" ? "Cancelada" : "Finalizada"}</span></div></div>
       {erro && <div className="alert alert-error">{erro}</div>}
       <div className="split-layout">
         <section className="card">
@@ -40,7 +41,10 @@ export default async function CommandDetailPage({ params, searchParams }: Params
             </form>)}
           </div>
         </section>
-        <aside className="card sticky-card">
+        <aside className={`card sticky-card ${command.priority ? "priority-alert" : ""}`}>
+          {command.status === "OPEN" && <><h3><CircleAlert size={17}/> Prioridade da comanda/mesa</h3>
+            {command.priority ? <div className="form-stack priority-control"><div className="priority-current"><strong>Prioridade ativa</strong><PriorityInfo note={command.priority_note}/><p>{command.priority_note}</p></div><form action={updateCommandPriorityAction} className="form-stack"><input type="hidden" name="commandId" value={command.id}/><input type="hidden" name="priority" value="true"/><div className="field"><label>Motivo ou observação</label><textarea className="textarea" name="priorityNote" minLength={3} defaultValue={command.priority_note??""} rows={3} required/></div><button className="btn btn-primary btn-small" type="submit">Atualizar prioridade</button></form><form action={updateCommandPriorityAction}><input type="hidden" name="commandId" value={command.id}/><input type="hidden" name="priority" value="false"/><button className="btn btn-light btn-small" type="submit">Remover prioridade</button></form></div> : <form action={updateCommandPriorityAction} className="form-stack priority-control"><input type="hidden" name="commandId" value={command.id}/><input type="hidden" name="priority" value="true"/><div className="field"><label>Motivo ou observação</label><textarea className="textarea" name="priorityNote" minLength={3} rows={3} placeholder="Ex.: cliente aguardando item atrasado" required/></div><button className="btn btn-danger" type="submit"><CircleAlert size={16}/> Marcar como prioridade</button></form>}
+            <div className="divider"/></>}
           <h3><ShoppingCart size={17}/> Itens da comanda</h3>
           {activeItems.length === 0 ? <div className="empty" style={{ padding: "28px 12px" }}>Adicione o primeiro produto.</div> : <div className="form-stack">
             {activeItems.map((item) => <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, borderBottom: "1px solid var(--line)", paddingBottom: 11 }}>

@@ -33,7 +33,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     <section className="card" style={{ marginBottom:22 }}>
       <h3>Novo produto</h3>
       <form action={createProductAction} className="form-grid">
-        <div className="field"><label>Nome</label><input className="input" name="name" required/></div>
+        <div className="field"><label>Nome</label><input className="input uppercase-input" name="name" required/><small>O nome será salvo automaticamente em caixa alta.</small></div>
         <div className="field"><label>Categoria</label><select className="select" name="category" required><option value="Bebidas">Bebidas</option><option value="Chopes e cervejas">Chopes e cervejas</option><option value="Drinks">Drinks</option><option value="Porções">Porções</option><option value="Lanches">Lanches</option><option value="Sobremesas">Sobremesas</option><option value="Outros">Outros</option></select></div>
         <div className="field"><label>Preço (R$)</label><input className="input" name="price" type="number" min="0" step="0.01" required/></div>
         <div className="field"><label>Setor</label><select className="select" name="destination"><option value="DIRECT">Entrega direta</option><option value="KITCHEN">Cozinha</option><option value="BAR">Bar</option></select></div>

@@ -27,7 +27,7 @@ export default async function EditProductPage({ params, searchParams }: { params
     <section className="card product-edit-card">
       <form action={updateProductAction} className="form-grid">
         <input type="hidden" name="productId" value={product.id}/>
-        <div className="field"><label>Nome</label><input className="input" name="name" defaultValue={product.name} required/></div>
+        <div className="field"><label>Nome</label><input className="input uppercase-input" name="name" defaultValue={product.name} required/><small>O nome será salvo automaticamente em caixa alta.</small></div>
         <div className="field"><label>Categoria</label><select className="select" name="category" defaultValue={product.category} required><option value="Bebidas">Bebidas</option><option value="Chopes e cervejas">Chopes e cervejas</option><option value="Drinks">Drinks</option><option value="Porções">Porções</option><option value="Lanches">Lanches</option><option value="Sobremesas">Sobremesas</option><option value="Outros">Outros</option></select></div>
         <div className="field"><label>Preço (R$)</label><input className="input" name="price" type="number" min="0" step="0.01" defaultValue={(Number(product.price_cents)/100).toFixed(2)} required/></div>
         <div className="field"><label>Setor</label><select className="select" name="destination" defaultValue={product.destination}><option value="DIRECT">Entrega direta</option><option value="KITCHEN">Cozinha</option><option value="BAR">Bar</option></select></div>
