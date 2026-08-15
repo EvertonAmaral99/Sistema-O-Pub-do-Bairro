@@ -66,7 +66,7 @@ export async function requireUser() {
 
 export async function requireRole(roles: Role[]) {
   const user = await requireUser();
-  if (!roles.includes(user.role)) redirect("/painel?erro=permissao");
+  if (!roles.includes(user.role)) redirect(`${firstAllowedPath(user)}?erro=permissao`);
   return user;
 }
 

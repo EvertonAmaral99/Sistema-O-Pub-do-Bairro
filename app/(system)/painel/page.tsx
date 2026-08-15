@@ -3,11 +3,12 @@ import { AlertTriangle, ChefHat, ClipboardList, WalletCards } from "lucide-react
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
-import { hasPermission } from "@/lib/roles";
+import { hasPermission, isManagementRole } from "@/lib/roles";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
   const user = await requirePermission("DASHBOARD");
   const canUseCommands = hasPermission(user, "COMMANDS");
+  const canViewFinance = isManagementRole(user.role);
   const { erro } = await searchParams;
   const [stats, commands] = await Promise.all([
     query<{ open_commands: string; today_sales: string; low_stock: string; prep_items: string }>(`SELECT
@@ -25,9 +26,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     <>
       <div className="page-head"><div><p className="eyebrow">Hoje no pub</p><h2>Visão geral</h2><p>Acompanhe os pontos principais da operação.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-primary">Nova comanda</Link>}</div>
       {erro === "permissao" && <div className="alert alert-error">Seu perfil não possui acesso a essa área.</div>}
-      <section className="grid grid-4">
+      <section className={`grid ${canViewFinance ? "grid-4" : "grid-3"}`}>
         <div className="card stat"><span className="stat-label"><ClipboardList size={16}/> Comandas abertas</span><strong className="stat-value">{data.open_commands}</strong><span className="stat-meta">em atendimento agora</span></div>
-        <div className="card stat"><span className="stat-label"><WalletCards size={16}/> Vendas de hoje</span><strong className="stat-value">{formatMoney(data.today_sales)}</strong><span className="stat-meta">vendas finalizadas</span></div>
+        {canViewFinance && <div className="card stat"><span className="stat-label"><WalletCards size={16}/> Vendas de hoje</span><strong className="stat-value">{formatMoney(data.today_sales)}</strong><span className="stat-meta">vendas finalizadas</span></div>}
         <div className="card stat"><span className="stat-label"><ChefHat size={16}/> Em preparo</span><strong className="stat-value">{data.prep_items}</strong><span className="stat-meta">itens na cozinha e no bar</span></div>
         <div className="card stat"><span className="stat-label"><AlertTriangle size={16}/> Estoque baixo</span><strong className="stat-value">{data.low_stock}</strong><span className="stat-meta">produtos no mínimo ou abaixo</span></div>
       </section>
@@ -36,10 +37,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         {commands.rows.length === 0 ? <div className="empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
           {commands.rows.map((command) => canUseCommands ? <Link className="command-card" href={`/comandas/${command.id}`} key={command.id}>
             <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">Mesa {command.table_number}</span></div>
-            <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p><strong className="money">{formatMoney(command.total)}</strong>
+            <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p>{canViewFinance && <strong className="money">{formatMoney(command.total)}</strong>}
           </Link> : <div className="command-card" key={command.id}>
             <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">Mesa {command.table_number}</span></div>
-            <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p><strong className="money">{formatMoney(command.total)}</strong>
+            <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p>{canViewFinance && <strong className="money">{formatMoney(command.total)}</strong>}
           </div>)}
         </div>}
       </section>

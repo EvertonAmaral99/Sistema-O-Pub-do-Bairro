@@ -5,13 +5,16 @@ import { redirect } from "next/navigation";
 import { auditLog } from "@/lib/audit";
 import { hashPassword, requirePermission, requireRole } from "@/lib/auth";
 import { transaction } from "@/lib/db";
-import { defaultPermissionsByRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
+import { defaultPermissionsByRole, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
 
 function numberValue(value: FormDataEntryValue | null, fallback = 0) {
   const parsed = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 function cents(value: FormDataEntryValue | null) { return Math.max(0, Math.round(numberValue(value) * 100)); }
+function quantityValue(value: FormDataEntryValue | null, fallback = 0) {
+  return Math.round(numberValue(value, fallback) * 1000) / 1000;
+}
 function positiveId(value: FormDataEntryValue | null) {
   const id = Math.trunc(numberValue(value));
   if (id < 1) throw new Error("Registro inválido.");
@@ -25,7 +28,7 @@ function moneyText(value: number) {
 }
 
 export async function openCashAction(formData: FormData) {
-  const user = await requirePermission("CASH");
+  const user = await requireRole(["ADMIN","MANAGER"]);
   const openingAmount = cents(formData.get("openingAmount"));
   try {
     await transaction(async (client) => {
@@ -38,7 +41,7 @@ export async function openCashAction(formData: FormData) {
 }
 
 export async function closeCashAction(formData: FormData) {
-  const user = await requirePermission("CASH");
+  const user = await requireRole(["ADMIN","MANAGER"]);
   const cashId = positiveId(formData.get("cashId"));
   const format = String(formData.get("format") ?? "80");
   const closingAmount = cents(formData.get("closingAmount"));
@@ -85,16 +88,17 @@ export async function addItemAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandId = positiveId(formData.get("commandId"));
   const productId = positiveId(formData.get("productId"));
-  const quantity = Math.max(1, Math.trunc(numberValue(formData.get("quantity"), 1)));
+  const quantity = quantityValue(formData.get("quantity"), 1);
+  if (quantity <= 0) fail(`/comandas/${commandId}`, "Informe uma quantidade maior que zero.");
   try {
     await transaction(async (client) => {
       const command = await client.query<{ command_number:number }>("SELECT command_number FROM commands WHERE id=$1 AND status='OPEN' FOR UPDATE", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda fechada.");
-      const product = await client.query<{ name:string;price_cents:number;stock_quantity:number;destination:string }>("SELECT name,price_cents,stock_quantity,destination FROM products WHERE id=$1 AND active=TRUE FOR UPDATE", [productId]);
+      const product = await client.query<{ name:string;price_cents:number;stock_quantity:number|string;destination:string;sale_unit:string }>("SELECT name,price_cents,stock_quantity,destination,sale_unit FROM products WHERE id=$1 AND active=TRUE FOR UPDATE", [productId]);
       const item = product.rows[0];
       if (!item) throw new Error("Produto indisponível.");
       if (Number(item.stock_quantity) < quantity) throw new Error(`Estoque insuficiente. Disponível: ${item.stock_quantity}.`);
-      const inserted = await client.query<{ id:number }>("INSERT INTO order_items (command_id,product_id,product_name,unit_price_cents,quantity,destination,added_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [commandId, productId, item.name, item.price_cents, quantity, item.destination, user.id]);
+      const inserted = await client.query<{ id:number }>("INSERT INTO order_items (command_id,product_id,product_name,unit_price_cents,quantity,destination,sale_unit,added_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [commandId, productId, item.name, item.price_cents, quantity, item.destination, item.sale_unit, user.id]);
       await client.query("UPDATE products SET stock_quantity=stock_quantity-$1,updated_at=NOW() WHERE id=$2", [quantity, productId]);
       await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'ITEM_ADDED',$3,$4)", [productId, -quantity, inserted.rows[0].id, user.id]);
       await auditLog({ userId:user.id, action:"ITEM_ADDED", entityType:"COMMAND", entityId:commandId, description:`Adicionou ${quantity}× ${item.name} à comanda #${command.rows[0].command_number}.`, metadata:{ productId, quantity, orderItemId:inserted.rows[0].id } }, client);
@@ -111,7 +115,7 @@ export async function removeItemAction(formData: FormData) {
   const itemId = positiveId(formData.get("itemId"));
   try {
     await transaction(async (client) => {
-      const item = await client.query<{ product_id:number;product_name:string;quantity:number;status:string;command_number:number }>("SELECT oi.product_id,oi.product_name,oi.quantity,oi.status,c.command_number FROM order_items oi JOIN commands c ON c.id=oi.command_id WHERE oi.id=$1 AND oi.command_id=$2 AND c.status='OPEN' FOR UPDATE", [itemId, commandId]);
+      const item = await client.query<{ product_id:number;product_name:string;quantity:number|string;status:string;command_number:number }>("SELECT oi.product_id,oi.product_name,oi.quantity,oi.status,c.command_number FROM order_items oi JOIN commands c ON c.id=oi.command_id WHERE oi.id=$1 AND oi.command_id=$2 AND c.status='OPEN' FOR UPDATE", [itemId, commandId]);
       const current = item.rows[0];
       if (!current || current.status === "CANCELLED") throw new Error("Item não pode ser removido.");
       await client.query("UPDATE order_items SET status='CANCELLED',cancelled_at=NOW() WHERE id=$1", [itemId]);
@@ -168,7 +172,8 @@ export async function closeCommandAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandId = positiveId(formData.get("commandId"));
   const format = String(formData.get("format") ?? "80");
-  const paymentValues = [["CASH",cents(formData.get("cash"))],["PIX",cents(formData.get("pix"))],["DEBIT",cents(formData.get("debit"))],["CREDIT",cents(formData.get("credit"))]] as const;
+  const paymentValues = [["CASH",cents(formData.get("cash"))],["PIX",cents(formData.get("pix"))],["DEBIT",cents(formData.get("debit"))],["CREDIT",cents(formData.get("credit"))],["STAFF_VOUCHER",cents(formData.get("staffVoucher"))]] as const;
+  const splitCount = Math.max(1, Math.trunc(numberValue(formData.get("splitCount"), 1)));
   let saleId = 0;
   try {
     saleId = await transaction(async (client) => {
@@ -177,7 +182,7 @@ export async function closeCommandAction(formData: FormData) {
       const pending = await client.query<{ count:string }>("SELECT COUNT(*)::text AS count FROM order_items WHERE command_id=$1 AND status='PENDING' AND destination IN ('KITCHEN','BAR')", [commandId]);
       if (Number(pending.rows[0]?.count) > 0) throw new Error("Envie os novos itens para a cozinha antes de fechar.");
       const totalItems = await client.query<{ subtotal:string }>("SELECT COALESCE(SUM(unit_price_cents*quantity),0)::text AS subtotal FROM order_items WHERE command_id=$1 AND status<>'CANCELLED'", [commandId]);
-      const subtotal = Number(totalItems.rows[0]?.subtotal ?? 0);
+      const subtotal = Math.round(Number(totalItems.rows[0]?.subtotal ?? 0));
       if (subtotal <= 0) throw new Error("A comanda não possui itens.");
       const discount = Math.min(cents(formData.get("discount")), subtotal);
       const servicePercent = Math.min(100, Math.max(0, numberValue(formData.get("servicePercent"))));
@@ -190,10 +195,10 @@ export async function closeCommandAction(formData: FormData) {
       if (cashAmount > 0 && cashReceived < cashAmount) throw new Error("O valor recebido em dinheiro é menor que o valor informado.");
       const cash = await client.query<{ id:number }>("SELECT id FROM cash_sessions WHERE status='OPEN' LIMIT 1 FOR UPDATE");
       if (!cash.rows[0]) throw new Error("Abra o caixa antes de finalizar a venda.");
-      const sale = await client.query<{ id:number }>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [commandId, cash.rows[0].id, subtotal, discount, service, total, user.id]);
+      const sale = await client.query<{ id:number }>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,split_count,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [commandId, cash.rows[0].id, subtotal, discount, service, total, splitCount, user.id]);
       for (const [method,amount] of paymentValues) if (amount > 0) await client.query("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents) VALUES ($1,$2,$3,$4,$5)", [sale.rows[0].id, method, amount, method === "CASH" ? cashReceived : null, method === "CASH" ? cashReceived - amount : 0]);
       await client.query("UPDATE commands SET status='CLOSED',closed_at=NOW() WHERE id=$1", [commandId]);
-      await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda #${command.rows[0].command_number} por ${moneyText(total)}.`, metadata:{ commandId, subtotal, discount, service, total } }, client);
+      await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda #${command.rows[0].command_number} por ${moneyText(total)}.`, metadata:{ commandId, subtotal, discount, service, total, splitCount } }, client);
       return sale.rows[0].id;
     });
   } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível fechar a comanda."); }
@@ -203,18 +208,44 @@ export async function closeCommandAction(formData: FormData) {
   redirect(`/imprimir/venda/${saleId}?formato=${encodeURIComponent(format)}`);
 }
 
+export async function cancelCommandAction(formData: FormData) {
+  const user = await requirePermission("COMMANDS");
+  const commandId = positiveId(formData.get("commandId"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (reason.length < 3) fail(`/comandas/${commandId}`, "Informe o motivo do cancelamento.");
+  try {
+    await transaction(async (client) => {
+      const command = await client.query<{ command_number:number }>("SELECT command_number FROM commands WHERE id=$1 AND status='OPEN' FOR UPDATE", [commandId]);
+      if (!command.rows[0]) throw new Error("A comanda não está aberta.");
+      const items = await client.query<{ id:number;product_id:number;quantity:number|string }>("SELECT id,product_id,quantity FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' FOR UPDATE", [commandId]);
+      for (const item of items.rows) {
+        await client.query("UPDATE products SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [item.quantity, item.product_id]);
+        await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'COMMAND_CANCELLED',$3,$4)", [item.product_id, item.quantity, item.id, user.id]);
+      }
+      await client.query("UPDATE order_items SET status='CANCELLED',cancelled_at=NOW() WHERE command_id=$1 AND status<>'CANCELLED'", [commandId]);
+      await client.query("UPDATE commands SET status='CANCELLED',closed_at=NOW(),cancelled_by=$1,cancellation_reason=$2 WHERE id=$3", [user.id, reason, commandId]);
+      await auditLog({ userId:user.id, action:"COMMAND_CANCELLED", entityType:"COMMAND", entityId:commandId, description:`Cancelou a comanda #${command.rows[0].command_number}. Motivo: ${reason}`, metadata:{ reason, returnedItems:items.rowCount } }, client);
+    });
+  } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível cancelar a comanda."); }
+  revalidatePath("/comandas");
+  revalidatePath("/painel");
+  revalidatePath("/estoque");
+  redirect("/comandas");
+}
+
 export async function createProductAction(formData: FormData) {
   const user = await requirePermission("PRODUCTS");
   const name = String(formData.get("name") ?? "").trim();
   const category = String(formData.get("category") ?? "").trim();
   const destination = String(formData.get("destination") ?? "DIRECT");
+  const saleUnit = String(formData.get("saleUnit") ?? "UNIT");
   const price = cents(formData.get("price"));
-  const stock = Math.max(0, Math.trunc(numberValue(formData.get("stock"))));
-  const minStock = Math.max(0, Math.trunc(numberValue(formData.get("minStock"))));
-  if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination)) fail("/produtos", "Preencha os dados do produto.");
+  const stock = Math.max(0, quantityValue(formData.get("stock")));
+  const minStock = Math.max(0, quantityValue(formData.get("minStock")));
+  if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail("/produtos", "Preencha os dados do produto.");
   await transaction(async (client) => {
-    const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id", [name, category, price, stock, minStock, destination]);
-    await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.`, metadata:{ category, stock, minStock, destination } }, client);
+    const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id", [name, category, price, stock, minStock, destination, saleUnit]);
+    await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.`, metadata:{ category, stock, minStock, destination, saleUnit } }, client);
   });
   revalidatePath("/produtos");
   revalidatePath("/estoque");
@@ -224,11 +255,11 @@ export async function createProductAction(formData: FormData) {
 export async function adjustStockAction(formData: FormData) {
   const user = await requirePermission("STOCK");
   const productId = positiveId(formData.get("productId"));
-  const quantity = Math.trunc(numberValue(formData.get("quantity")));
+  const quantity = quantityValue(formData.get("quantity"));
   if (quantity === 0) fail("/estoque", "Informe uma quantidade diferente de zero.");
   try {
     await transaction(async (client) => {
-      const current = await client.query<{ name:string;stock_quantity:number }>("SELECT name,stock_quantity FROM products WHERE id=$1 FOR UPDATE", [productId]);
+      const current = await client.query<{ name:string;stock_quantity:number|string }>("SELECT name,stock_quantity FROM products WHERE id=$1 FOR UPDATE", [productId]);
       if (!current.rows[0] || Number(current.rows[0].stock_quantity) + quantity < 0) throw new Error("O ajuste deixaria o estoque negativo.");
       const newStock = Number(current.rows[0].stock_quantity) + quantity;
       await client.query("UPDATE products SET stock_quantity=$1,updated_at=NOW() WHERE id=$2", [newStock, productId]);
@@ -261,10 +292,10 @@ export async function createUserAction(formData: FormData) {
   const username = String(formData.get("username") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const roleValue = String(formData.get("role") ?? "");
-  const roles:Role[] = ["ADMIN","MANAGER","CASHIER","KITCHEN"];
+  const roles:Role[] = ["ADMIN","MANAGER","CASHIER","KITCHEN","WAITER"];
   if (name.length < 2 || username.length < 3 || password.length < 8 || !roles.includes(roleValue as Role)) fail("/configuracoes", "Revise os dados do funcionário.");
   const role = roleValue as Role;
-  if (actor.role === "MANAGER" && !["CASHIER","KITCHEN"].includes(role)) fail("/configuracoes", "Gerentes podem cadastrar somente Caixa ou Cozinha.");
+  if (actor.role === "MANAGER" && !["CASHIER","KITCHEN","WAITER"].includes(role)) fail("/configuracoes", "Gerentes podem cadastrar somente Caixa, Cozinha ou Garçom.");
   try {
     await transaction(async (client) => {
       const created = await client.query<{ id:number }>("INSERT INTO users (name,username,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING id", [name, username, await hashPassword(password), role]);
@@ -286,14 +317,72 @@ export async function updateUserPermissionsAction(formData: FormData) {
       if (!target.rows[0]) throw new Error("Funcionário não encontrado.");
       if (target.rows[0].role === "ADMIN") throw new Error("O acesso de Administradores é sempre completo.");
       if (actor.role === "MANAGER" && target.rows[0].role === "MANAGER") throw new Error("Somente Administradores podem alterar outro Gerente.");
+      const allowed = isManagementRole(target.rows[0].role) ? selected : selected.filter((permission) => !["CASH","REPORTS"].includes(permission));
       await client.query("DELETE FROM user_permissions WHERE user_id=$1", [userId]);
-      for (const permission of selected) await client.query("INSERT INTO user_permissions (user_id,permission) VALUES ($1,$2)", [userId, permission]);
-      const labels = permissionConfig.filter((item) => selected.includes(item.key)).map((item) => item.label);
-      await auditLog({ userId:actor.id, action:"PERMISSIONS_UPDATED", entityType:"USER", entityId:userId, description:`Atualizou os acessos de ${target.rows[0].name}: ${labels.length ? labels.join(", ") : "sem módulos operacionais"}.`, metadata:{ permissions:selected } }, client);
+      for (const permission of allowed) await client.query("INSERT INTO user_permissions (user_id,permission) VALUES ($1,$2)", [userId, permission]);
+      const labels = permissionConfig.filter((item) => allowed.includes(item.key)).map((item) => item.label);
+      await auditLog({ userId:actor.id, action:"PERMISSIONS_UPDATED", entityType:"USER", entityId:userId, description:`Atualizou os acessos de ${target.rows[0].name}: ${labels.length ? labels.join(", ") : "sem módulos operacionais"}.`, metadata:{ permissions:allowed } }, client);
     });
   } catch (error) { fail("/configuracoes", error instanceof Error ? error.message : "Não foi possível atualizar os acessos."); }
   revalidatePath("/configuracoes");
   redirect("/configuracoes");
+}
+
+function eventFields(formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim();
+  const eventDate = String(formData.get("eventDate") ?? "");
+  const startTime = String(formData.get("startTime") ?? "");
+  const durationHours = quantityValue(formData.get("durationHours"));
+  const amount = cents(formData.get("amount"));
+  if (name.length < 2 || !/^\d{4}-\d{2}-\d{2}$/.test(eventDate) || !/^\d{2}:\d{2}$/.test(startTime) || durationHours <= 0) {
+    throw new Error("Preencha corretamente os dados do evento.");
+  }
+  return { name, eventDate, startTime, durationHours, amount };
+}
+
+export async function createEventAction(formData: FormData) {
+  const user = await requireRole(["ADMIN","MANAGER"]);
+  let eventDate = "";
+  try {
+    const fields = eventFields(formData); eventDate = fields.eventDate;
+    await transaction(async (client) => {
+      const created = await client.query<{ id:number }>("INSERT INTO events (name,event_date,start_time,duration_hours,amount_cents,created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id", [fields.name, fields.eventDate, fields.startTime, fields.durationHours, fields.amount, user.id]);
+      await auditLog({ userId:user.id, action:"EVENT_CREATED", entityType:"EVENT", entityId:created.rows[0].id, description:`Cadastrou o evento ${fields.name} para ${fields.eventDate} às ${fields.startTime}.`, metadata:fields }, client);
+    });
+  } catch (error) { fail(`/agenda/novo${eventDate ? `?data=${eventDate}` : ""}`, error instanceof Error ? error.message : "Não foi possível cadastrar o evento."); }
+  revalidatePath("/agenda");
+  redirect(`/agenda?mes=${eventDate.slice(0,7)}`);
+}
+
+export async function updateEventAction(formData: FormData) {
+  const user = await requireRole(["ADMIN","MANAGER"]);
+  const eventId = positiveId(formData.get("eventId"));
+  let eventMonth = "";
+  try {
+    const fields = eventFields(formData);
+    eventMonth = fields.eventDate.slice(0,7);
+    await transaction(async (client) => {
+      const updated = await client.query("UPDATE events SET name=$1,event_date=$2,start_time=$3,duration_hours=$4,amount_cents=$5,updated_by=$6,updated_at=NOW() WHERE id=$7", [fields.name, fields.eventDate, fields.startTime, fields.durationHours, fields.amount, user.id, eventId]);
+      if (!updated.rowCount) throw new Error("Evento não encontrado.");
+      await auditLog({ userId:user.id, action:"EVENT_UPDATED", entityType:"EVENT", entityId:eventId, description:`Atualizou o evento ${fields.name} de ${fields.eventDate}.`, metadata:fields }, client);
+    });
+  } catch (error) { fail(`/agenda/${eventId}`, error instanceof Error ? error.message : "Não foi possível atualizar o evento."); }
+  revalidatePath("/agenda");
+  redirect(`/agenda?mes=${eventMonth}`);
+}
+
+export async function deleteEventAction(formData: FormData) {
+  const user = await requireRole(["ADMIN","MANAGER"]);
+  const eventId = positiveId(formData.get("eventId"));
+  try {
+    await transaction(async (client) => {
+      const removed = await client.query<{ name:string;event_date:string }>("DELETE FROM events WHERE id=$1 RETURNING name,event_date::text", [eventId]);
+      if (!removed.rows[0]) throw new Error("Evento não encontrado.");
+      await auditLog({ userId:user.id, action:"EVENT_DELETED", entityType:"EVENT", entityId:eventId, description:`Excluiu o evento ${removed.rows[0].name} de ${removed.rows[0].event_date}.` }, client);
+    });
+  } catch (error) { fail(`/agenda/${eventId}`, error instanceof Error ? error.message : "Não foi possível excluir o evento."); }
+  revalidatePath("/agenda");
+  redirect("/agenda");
 }
 
 export async function cancelSaleAction(formData: FormData) {

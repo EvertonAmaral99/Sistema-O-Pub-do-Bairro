@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Boxes, ChefHat, CircleDollarSign, ClipboardList, LayoutDashboard, LogOut, Package, ScrollText, Settings } from "lucide-react";
+import { BarChart3, Boxes, CalendarDays, ChefHat, CircleDollarSign, ClipboardList, LayoutDashboard, LogOut, Package, ScrollText, Settings } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 import { BrandLogo } from "@/components/brand-logo";
 import type { Permission, Role, SessionUser } from "@/lib/roles";
@@ -15,8 +15,9 @@ const links: LinkItem[] = [
   { href: "/cozinha", label: "Cozinha e bar", icon: ChefHat, permission: "KITCHEN" },
   { href: "/produtos", label: "Produtos", icon: Package, permission: "PRODUCTS" },
   { href: "/estoque", label: "Estoque", icon: Boxes, permission: "STOCK" },
-  { href: "/caixa", label: "Caixa", icon: CircleDollarSign, permission: "CASH" },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, permission: "REPORTS" },
+  { href: "/caixa", label: "Caixa", icon: CircleDollarSign, roles: ["ADMIN", "MANAGER"] },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["ADMIN", "MANAGER"] },
+  { href: "/agenda", label: "Agenda", icon: CalendarDays, roles: ["ADMIN", "MANAGER"] },
   { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN", "MANAGER"] },
   { href: "/logs", label: "Histórico", icon: ScrollText, roles: ["ADMIN", "MANAGER"] },
 ];

@@ -9,3 +9,10 @@ export function formatDateTime(value: string | Date) {
 export function formatDate(value: string | Date) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeZone: "America/Sao_Paulo" }).format(new Date(value));
 }
+
+export function formatQuantity(value: number | string, unit?: string) {
+  const amount = Number(value);
+  const formatted = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 3 }).format(amount);
+  const labels: Record<string, string> = { UNIT: "un.", KG: "kg", L: "L", PORTION: "porção", DOSE: "dose", BOTTLE: "garrafa", CAN: "lata" };
+  return `${formatted}${unit ? ` ${labels[unit] ?? unit}` : ""}`;
+}

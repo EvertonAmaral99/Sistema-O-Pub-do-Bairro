@@ -38,7 +38,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <div className="field"><label>Usuário</label><input className="input" name="username" minLength={3} required/></div>
             <div className="field"><label>Senha inicial</label><input className="input" name="password" type="password" minLength={8} required/></div>
             <div className="field"><label>Perfil</label><select className="select" name="role">
-              <option value="CASHIER">Caixa</option><option value="KITCHEN">Cozinha</option>
+              <option value="CASHIER">Caixa</option><option value="WAITER">Garçom</option><option value="KITCHEN">Cozinha</option>
               {actor.role === "ADMIN" && <><option value="MANAGER">Gerente</option><option value="ADMIN">Administrador</option></>}
             </select></div>
           </div>
@@ -69,10 +69,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             {managedUser.role === "ADMIN" ? <div className="permission-lock"><ShieldCheck size={17}/><span>Administradores possuem acesso completo.</span></div> : locked ? <div className="permission-lock"><ShieldCheck size={17}/><span>Somente um Administrador pode alterar os acessos de outro Gerente.</span></div> :
               <form action={updateUserPermissionsAction} className="permission-form">
                 <input type="hidden" name="userId" value={managedUser.id}/>
-                <div className="permission-grid">{permissionConfig.map((permission) => <label className="permission-option" key={permission.key}>
-                  <input type="checkbox" name="permissions" value={permission.key} defaultChecked={managedUser.permissions.includes(permission.key)}/>
-                  <span><strong>{permission.label}</strong><small>{permission.description}</small></span>
-                </label>)}</div>
+                <div className="permission-grid">{permissionConfig.map((permission) => {
+                  const managementOnly = "managementOnly" in permission && permission.managementOnly;
+                  if (managementOnly && !["ADMIN","MANAGER"].includes(managedUser.role)) return <div className="permission-option permission-protected" key={permission.key}><ShieldCheck size={16}/><span><strong>{permission.label}</strong><small>Somente Gerente e Administrador.</small></span></div>;
+                  return <label className="permission-option" key={permission.key}><input type="checkbox" name="permissions" value={permission.key} defaultChecked={managedUser.permissions.includes(permission.key)}/><span><strong>{permission.label}</strong><small>{permission.description}</small></span></label>;
+                })}</div>
                 <div className="permission-actions"><button className="btn btn-primary btn-small" type="submit">Salvar acessos</button></div>
               </form>}
           </article>;
