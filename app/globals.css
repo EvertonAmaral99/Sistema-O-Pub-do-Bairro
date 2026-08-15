@@ -192,6 +192,8 @@ tr:hover td { background:#fff3f4; }
 .password-card-title h3 { margin:0 0 4px; }
 .password-card-title p { margin:0; color:var(--muted); font-size:13px; }
 .management-settings { margin-top:22px; }
+.user-name-edit { display:flex; align-items:center; gap:9px; }
+.user-name-edit strong { min-width:max-content; }
 .table-choice-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
 .table-choice { display:flex; align-items:center; gap:10px; border:1px solid var(--line); border-radius:11px; padding:12px; background:#fff; cursor:pointer; }
 .table-choice:has(input:checked) { border-color:var(--amber); background:#fff0f1; }
@@ -199,6 +201,8 @@ tr:hover td { background:#fff3f4; }
 .table-choice strong,.table-choice small { display:block; }
 .table-choice small { color:var(--muted); margin-top:2px; }
 .command-table-choice-grid { grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); }
+.command-opening-card { margin-bottom:22px; }
+.command-opening-card h3 { display:flex; align-items:center; gap:7px; }
 .command-tables-editor summary { display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--ink); font-size:14px; font-weight:800; }
 .command-tables-editor form { margin-top:14px; }
 .table-edit-card { max-width:760px; }
@@ -220,6 +224,8 @@ tr:hover td { background:#fff3f4; }
 .permission-protected { cursor:default; color:#765c61; background:#f3e9ea; }
 .permission-actions { display:flex; justify-content:flex-end; margin-top:12px; }
 .permission-lock { display:flex; align-items:center; gap:9px; border-radius:10px; padding:11px 13px; background:#f2e8e9; color:#604b4e; font-size:13px; }
+.user-permission-edit-card { max-width:980px; }
+.permission-grid-readonly { margin-top:14px; }
 .audit-table table { min-width:900px; }
 .audit-table td:nth-child(3) { min-width:360px; }
 .log-filters { display:grid; grid-template-columns:minmax(220px,1fr) minmax(260px,1.4fr) auto; gap:14px; align-items:end; margin-bottom:14px; }
@@ -341,6 +347,23 @@ tr:hover td { background:#fff3f4; }
   th,td { padding:11px 12px; }
   .command-grid { grid-template-columns:1fr; }
   .command-card { padding:15px; }
+  .commands-page-head { gap:10px; }
+  .commands-page-head .badge { align-self:flex-start; }
+  .command-opening-card { margin-inline:-4px; padding:14px; }
+  .command-opening-card h3 { font-size:18px; margin-bottom:16px; }
+  .command-opening-form { gap:14px; }
+  .command-number-field { order:1; }
+  .command-table-field { order:2; }
+  .command-client-field { order:3; }
+  .command-notes-field { order:4; }
+  .command-open-submit { position:sticky; z-index:30; bottom:10px; order:5; padding-top:3px; }
+  .command-open-submit .btn { width:100%; min-height:54px; border:2px solid #fff; border-radius:13px; font-size:16px; box-shadow:0 8px 24px rgba(117,10,18,.28); }
+  .command-table-choice-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .command-table-choice-grid .table-choice { min-width:0; min-height:66px; padding:10px; }
+  .command-table-choice-grid .table-choice input { width:22px; height:22px; flex:0 0 22px; }
+  .command-table-choice-grid .table-choice span { min-width:0; }
+  .command-table-choice-grid .table-choice strong { overflow:hidden; text-overflow:ellipsis; font-size:14px; }
+  .command-table-choice-grid .table-choice small { font-size:11px; }
   .dashboard-command-card { padding:0; }
   .dashboard-command-link { padding:15px; }
   .priority-dialog { padding:16px; }

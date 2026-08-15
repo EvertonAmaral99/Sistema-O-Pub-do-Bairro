@@ -610,6 +610,8 @@ export async function changeOwnPasswordAction(formData: FormData) {
 export async function updateUserPermissionsAction(formData: FormData) {
   const actor = await requireRole(["ADMIN","MANAGER"]);
   const userId = positiveId(formData.get("userId"));
+  const requestedReturnTo=String(formData.get("returnTo")??"");
+  const returnTo=requestedReturnTo===`/configuracoes/usuarios/${userId}`?requestedReturnTo:"/configuracoes";
   const selected = [...new Set(formData.getAll("permissions").map(String).filter(isPermission))];
   try {
     await transaction(async (client) => {
@@ -623,9 +625,9 @@ export async function updateUserPermissionsAction(formData: FormData) {
       const labels = permissionConfig.filter((item) => allowed.includes(item.key)).map((item) => item.label);
       await auditLog({ userId:actor.id, action:"PERMISSIONS_UPDATED", entityType:"USER", entityId:userId, description:`Atualizou os acessos de ${target.rows[0].name}: ${labels.length ? labels.join(", ") : "sem módulos operacionais"}.`, metadata:{ permissions:allowed } }, client);
     });
-  } catch (error) { fail("/configuracoes", error instanceof Error ? error.message : "Não foi possível atualizar os acessos."); }
-  revalidatePath("/configuracoes");
-  redirect("/configuracoes");
+  } catch (error) { fail(returnTo, error instanceof Error ? error.message : "Não foi possível atualizar os acessos."); }
+  revalidatePath("/configuracoes"); revalidatePath(`/configuracoes/usuarios/${userId}`);
+  redirect(`${returnTo}?sucesso=permissoes`);
 }
 
 function eventFields(formData: FormData) {

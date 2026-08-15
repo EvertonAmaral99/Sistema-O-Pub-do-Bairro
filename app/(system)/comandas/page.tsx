@@ -19,18 +19,18 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
       WHERE c.status='OPEN' GROUP BY c.id,cl.display_label ORDER BY c.priority DESC,c.opened_at`),
   ]);
   return (
-    <>
+    <div className="commands-page">
       <LiveRefresh/>
-      <div className="page-head"><div><p className="eyebrow">Atendimento</p><h2>Mesas e comandas</h2><p>Escolha uma ou várias mesas para cada comanda.</p></div><span className="badge badge-blue"><Radio size={13}/> Atualização automática</span></div>
+      <div className="page-head commands-page-head"><div><p className="eyebrow">Atendimento</p><h2>Mesas e comandas</h2><p>Escolha uma ou várias mesas para cada comanda.</p></div><span className="badge badge-blue"><Radio size={13}/> Atualização automática</span></div>
       {erro && <div className="alert alert-error">{erro}</div>}
-      <section className="card" style={{ marginBottom: 22 }}>
+      <section className="card command-opening-card">
         <h3><Plus size={17}/> Abrir nova comanda</h3>
-        <form action={openCommandAction} className="form-grid">
-          <div className="field"><label>Número da comanda</label><input className="input" name="commandNumber" type="number" min="1" required autoFocus /></div>
-          <div className="field"><label>Nome do cliente (opcional)</label><input className="input" name="customerName" /></div>
-          <div className="field"><label>Observação (opcional)</label><input className="input" name="notes" /></div>
-          <div className="field span-2"><label>Mesas desta comanda</label><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className="table-choice" key={table.id}><input type="checkbox" name="tableIds" value={table.id}/><span><strong>{table.label}</strong><small>Mesa {table.number}</small></span></label>)}</div><small>Marque uma mesa ou várias mesas. A mesma mesa pode estar em outras comandas abertas.</small></div>
-          <div className="form-submit-field"><button className="btn btn-primary" type="submit">Abrir comanda</button></div>
+        <form action={openCommandAction} className="form-grid command-opening-form">
+          <div className="field command-number-field"><label>Número da comanda</label><input className="input" name="commandNumber" type="number" inputMode="numeric" min="1" autoComplete="off" required autoFocus /></div>
+          <div className="field command-client-field"><label>Nome do cliente (opcional)</label><input className="input" name="customerName" autoComplete="off" /></div>
+          <div className="field command-notes-field"><label>Observação (opcional)</label><input className="input" name="notes" autoComplete="off" /></div>
+          <div className="field span-2 command-table-field"><label>Mesas desta comanda</label><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className="table-choice" key={table.id}><input type="checkbox" name="tableIds" value={table.id}/><span><strong>{table.label}</strong><small>Mesa {table.number}</small></span></label>)}</div><small>Marque uma mesa ou várias mesas. A mesma mesa pode estar em outras comandas abertas.</small></div>
+          <div className="form-submit-field command-open-submit"><button className="btn btn-primary" type="submit">Abrir comanda</button></div>
         </form>
       </section>
       {commands.rows.length === 0 ? <div className="card empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
@@ -41,6 +41,6 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
           <strong className="money">{formatMoney(command.total)}</strong>
         </Link>;})}
       </div>}
-    </>
+    </div>
   );
 }
