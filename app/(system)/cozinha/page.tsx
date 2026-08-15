@@ -1,10 +1,10 @@
 import { updateKitchenStatusAction } from "@/app/system-actions";
 import { query } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 
 export default async function KitchenPage() {
-  await requireRole(["ADMIN", "MANAGER", "KITCHEN"]);
+  await requirePermission("KITCHEN");
   const items = await query<{ id:number; product_name:string; quantity:number; status:string; destination:string; command_number:number; table_number:number; sent_at:string }>(`SELECT oi.id,oi.product_name,oi.quantity,oi.status,oi.destination,c.command_number,t.number AS table_number,oi.sent_at
     FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN bar_tables t ON t.id=c.table_id
     WHERE oi.status IN ('SENT','PREPARING','READY') ORDER BY CASE oi.status WHEN 'READY' THEN 1 WHEN 'PREPARING' THEN 2 ELSE 3 END,oi.sent_at`);

@@ -3,13 +3,13 @@ import { MinusCircle, Send, ShoppingCart } from "lucide-react";
 import { addItemAction, removeItemAction, sendKitchenAction } from "@/app/system-actions";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { PaymentForm } from "@/components/payment-form";
 
 type Params = { params: Promise<{ id: string }>; searchParams: Promise<{ erro?: string; busca?: string }> };
 
 export default async function CommandDetailPage({ params, searchParams }: Params) {
-  await requireRole(["ADMIN", "MANAGER", "CASHIER"]);
+  await requirePermission("COMMANDS");
   const commandId = Number((await params).id);
   const { erro, busca = "" } = await searchParams;
   const commandResult = await query<{ id: number; command_number: number; table_number: number; customer_name: string | null; opened_at: string; notes: string | null; status: string }>(`SELECT c.id,c.command_number,t.number AS table_number,c.customer_name,c.opened_at,c.notes,c.status FROM commands c JOIN bar_tables t ON t.id=c.table_id WHERE c.id=$1`, [commandId]);

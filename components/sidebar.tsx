@@ -2,22 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Boxes, ChefHat, CircleDollarSign, ClipboardList, LayoutDashboard, LogOut, Package, Settings } from "lucide-react";
+import { BarChart3, Boxes, ChefHat, CircleDollarSign, ClipboardList, LayoutDashboard, LogOut, Package, ScrollText, Settings } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 import { BrandLogo } from "@/components/brand-logo";
-import type { SessionUser } from "@/lib/roles";
-import { roleLabel } from "@/lib/roles";
+import type { Permission, Role, SessionUser } from "@/lib/roles";
+import { hasPermission, roleLabel } from "@/lib/roles";
 
-const links = [
-  { href: "/painel", label: "Visão geral", icon: LayoutDashboard, roles: ["ADMIN","MANAGER","CASHIER","KITCHEN"] },
-  { href: "/comandas", label: "Comandas", icon: ClipboardList, roles: ["ADMIN","MANAGER","CASHIER"] },
-  { href: "/cozinha", label: "Cozinha e bar", icon: ChefHat, roles: ["ADMIN","MANAGER","KITCHEN"] },
-  { href: "/produtos", label: "Produtos", icon: Package, roles: ["ADMIN","MANAGER"] },
-  { href: "/estoque", label: "Estoque", icon: Boxes, roles: ["ADMIN","MANAGER"] },
-  { href: "/caixa", label: "Caixa", icon: CircleDollarSign, roles: ["ADMIN","MANAGER","CASHIER"] },
-  { href: "/relatorios", label: "Relatórios", icon: BarChart3, roles: ["ADMIN","MANAGER"] },
-  { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN"] },
-] as const;
+type LinkItem = { href: string; label: string; icon: typeof LayoutDashboard; permission?: Permission; roles?: Role[] };
+const links: LinkItem[] = [
+  { href: "/painel", label: "Visão geral", icon: LayoutDashboard, permission: "DASHBOARD" },
+  { href: "/comandas", label: "Comandas", icon: ClipboardList, permission: "COMMANDS" },
+  { href: "/cozinha", label: "Cozinha e bar", icon: ChefHat, permission: "KITCHEN" },
+  { href: "/produtos", label: "Produtos", icon: Package, permission: "PRODUCTS" },
+  { href: "/estoque", label: "Estoque", icon: Boxes, permission: "STOCK" },
+  { href: "/caixa", label: "Caixa", icon: CircleDollarSign, permission: "CASH" },
+  { href: "/relatorios", label: "Relatórios", icon: BarChart3, permission: "REPORTS" },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN", "MANAGER"] },
+  { href: "/logs", label: "Histórico", icon: ScrollText, roles: ["ADMIN", "MANAGER"] },
+];
 
 export function Sidebar({ user }: { user: SessionUser }) {
   const pathname = usePathname();
@@ -25,7 +27,7 @@ export function Sidebar({ user }: { user: SessionUser }) {
     <aside className="sidebar">
       <div className="brand-mark"><BrandLogo className="sidebar-logo" priority /></div>
       <nav>
-        {links.filter((link) => (link.roles as readonly string[]).includes(user.role)).map((link) => {
+        {links.filter((link) => link.permission ? hasPermission(user, link.permission) : link.roles?.includes(user.role)).map((link) => {
           const Icon = link.icon;
           const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
           return <Link key={link.href} href={link.href} className={`nav-link ${active ? "active" : ""}`}><Icon size={18}/><span>{link.label}</span></Link>;

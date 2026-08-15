@@ -2,8 +2,12 @@ import Link from "next/link";
 import { AlertTriangle, ChefHat, ClipboardList, WalletCards } from "lucide-react";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { requirePermission } from "@/lib/auth";
+import { hasPermission } from "@/lib/roles";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
+  const user = await requirePermission("DASHBOARD");
+  const canUseCommands = hasPermission(user, "COMMANDS");
   const { erro } = await searchParams;
   const [stats, commands] = await Promise.all([
     query<{ open_commands: string; today_sales: string; low_stock: string; prep_items: string }>(`SELECT
@@ -19,7 +23,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const data = stats.rows[0];
   return (
     <>
-      <div className="page-head"><div><p className="eyebrow">Hoje no pub</p><h2>Visão geral</h2><p>Acompanhe os pontos principais da operação.</p></div><Link href="/comandas" className="btn btn-primary">Nova comanda</Link></div>
+      <div className="page-head"><div><p className="eyebrow">Hoje no pub</p><h2>Visão geral</h2><p>Acompanhe os pontos principais da operação.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-primary">Nova comanda</Link>}</div>
       {erro === "permissao" && <div className="alert alert-error">Seu perfil não possui acesso a essa área.</div>}
       <section className="grid grid-4">
         <div className="card stat"><span className="stat-label"><ClipboardList size={16}/> Comandas abertas</span><strong className="stat-value">{data.open_commands}</strong><span className="stat-meta">em atendimento agora</span></div>
@@ -28,12 +32,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="card stat"><span className="stat-label"><AlertTriangle size={16}/> Estoque baixo</span><strong className="stat-value">{data.low_stock}</strong><span className="stat-meta">produtos no mínimo ou abaixo</span></div>
       </section>
       <section className="card" style={{ marginTop: 22 }}>
-        <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Comandas em andamento</h3><p>Últimas comandas abertas.</p></div><Link href="/comandas" className="btn btn-light btn-small">Ver todas</Link></div>
+        <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Comandas em andamento</h3><p>Últimas comandas abertas.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-light btn-small">Ver todas</Link>}</div>
         {commands.rows.length === 0 ? <div className="empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
-          {commands.rows.map((command) => <Link className="command-card" href={`/comandas/${command.id}`} key={command.id}>
+          {commands.rows.map((command) => canUseCommands ? <Link className="command-card" href={`/comandas/${command.id}`} key={command.id}>
             <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">Mesa {command.table_number}</span></div>
             <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p><strong className="money">{formatMoney(command.total)}</strong>
-          </Link>)}
+          </Link> : <div className="command-card" key={command.id}>
+            <div className="command-top"><span className="command-number">#{command.command_number}</span><span className="badge badge-amber">Mesa {command.table_number}</span></div>
+            <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p><strong className="money">{formatMoney(command.total)}</strong>
+          </div>)}
         </div>}
       </section>
     </>

@@ -1,10 +1,10 @@
 import { adjustStockAction } from "@/app/system-actions";
 import { query } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
-  await requireRole(["ADMIN", "MANAGER"]);
+  await requirePermission("STOCK");
   const { erro } = await searchParams;
   const [products,movements] = await Promise.all([
     query<{ id:number; name:string; category:string; stock_quantity:number; min_stock:number }>("SELECT id,name,category,stock_quantity,min_stock FROM products WHERE active=TRUE ORDER BY (stock_quantity<=min_stock) DESC,category,name"),

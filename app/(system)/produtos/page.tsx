@@ -1,10 +1,10 @@
 import { createProductAction } from "@/app/system-actions";
 import { query } from "@/lib/db";
 import { formatMoney } from "@/lib/format";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
-  await requireRole(["ADMIN", "MANAGER"]);
+  await requirePermission("PRODUCTS");
   const { erro } = await searchParams;
   const products = await query<{ id:number; name:string; category:string; price_cents:number; stock_quantity:number; min_stock:number; destination:string; active:boolean }>("SELECT id,name,category,price_cents,stock_quantity,min_stock,destination,active FROM products ORDER BY active DESC,category,name");
   const area: Record<string,string> = { KITCHEN:"Cozinha",BAR:"Bar",DIRECT:"Entrega direta" };

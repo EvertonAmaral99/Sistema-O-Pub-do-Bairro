@@ -3,10 +3,10 @@ import { Plus } from "lucide-react";
 import { openCommandAction } from "@/app/system-actions";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 
 export default async function CommandsPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
-  await requireRole(["ADMIN", "MANAGER", "CASHIER"]);
+  await requirePermission("COMMANDS");
   const { erro } = await searchParams;
   const [tables, commands] = await Promise.all([
     query<{ id: number; number: number; label: string }>("SELECT id,number,COALESCE(label,'Mesa '||number) AS label FROM bar_tables WHERE active=TRUE ORDER BY number"),

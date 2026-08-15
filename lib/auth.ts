@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { query } from "@/lib/db";
-import type { Role, SessionUser } from "@/lib/roles";
+import { firstAllowedPath, hasPermission, type Permission, type Role, type SessionUser } from "@/lib/roles";
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = "pub_session";
@@ -47,9 +47,12 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const result = await query<SessionUser>(
-    `SELECT u.id, u.name, u.username, u.role
+    `SELECT u.id, u.name, u.username, u.role,
+       COALESCE(array_agg(up.permission) FILTER (WHERE up.permission IS NOT NULL), ARRAY[]::text[]) AS permissions
      FROM sessions s JOIN users u ON u.id = s.user_id
-     WHERE s.token_hash = $1 AND s.expires_at > NOW() AND u.active = TRUE`,
+     LEFT JOIN user_permissions up ON up.user_id = u.id
+     WHERE s.token_hash = $1 AND s.expires_at > NOW() AND u.active = TRUE
+     GROUP BY u.id`,
     [tokenHash(token)],
   );
   return result.rows[0] ?? null;
@@ -64,5 +67,17 @@ export async function requireUser() {
 export async function requireRole(roles: Role[]) {
   const user = await requireUser();
   if (!roles.includes(user.role)) redirect("/painel?erro=permissao");
+  return user;
+}
+
+export async function requirePermission(permission: Permission) {
+  const user = await requireUser();
+  if (!hasPermission(user, permission)) redirect(`${firstAllowedPath(user)}?erro=permissao`);
+  return user;
+}
+
+export async function requireAnyPermission(permissions: Permission[]) {
+  const user = await requireUser();
+  if (!permissions.some((permission) => hasPermission(user, permission))) redirect(`${firstAllowedPath(user)}?erro=permissao`);
   return user;
 }
