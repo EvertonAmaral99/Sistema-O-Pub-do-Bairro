@@ -29,6 +29,19 @@ function moneyText(value: number) {
 function productName(value: FormDataEntryValue | null) {
   return String(value ?? "").trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR");
 }
+function stockPerSaleUnitValue(value: FormDataEntryValue | null, name: string, saleUnit: string) {
+  const raw = String(value ?? "").trim();
+  if (raw) {
+    const manual = quantityValue(value);
+    if (manual <= 0) throw new Error("A baixa de estoque por item deve ser maior que zero.");
+    return manual;
+  }
+  if (saleUnit === "L") {
+    const milliliters = name.match(/(\d+(?:[.,]\d+)?)\s*ML\b/i)?.[1];
+    if (milliliters) return Math.round((Number(milliliters.replace(",", ".")) / 1000) * 1000) / 1000;
+  }
+  return 1;
+}
 
 async function readProductImage(value: FormDataEntryValue | null) {
   if (!value || typeof value === "string" || value.size === 0) return null;
@@ -109,14 +122,20 @@ export async function addItemAction(formData: FormData) {
     await transaction(async (client) => {
       const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,tl.display_label FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda fechada.");
-      const product = await client.query<{ name:string;price_cents:number;stock_quantity:number|string;destination:string;sale_unit:string }>("SELECT name,price_cents,stock_quantity,destination,sale_unit FROM products WHERE id=$1 AND active=TRUE FOR UPDATE", [productId]);
+      const product = await client.query<{ name:string;price_cents:number;stock_quantity:number|string;destination:string;sale_unit:string;stock_per_sale_unit:number|string }>("SELECT name,price_cents,stock_quantity,destination,sale_unit,stock_per_sale_unit FROM products WHERE id=$1 AND active=TRUE FOR UPDATE", [productId]);
       const item = product.rows[0];
       if (!item) throw new Error("Produto indisponível.");
-      if (Number(item.stock_quantity) < quantity) throw new Error(`Estoque insuficiente. Disponível: ${item.stock_quantity}.`);
-      const inserted = await client.query<{ id:number }>("INSERT INTO order_items (command_id,product_id,product_name,unit_price_cents,quantity,destination,sale_unit,added_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [commandId, productId, item.name, item.price_cents, quantity, item.destination, item.sale_unit, user.id]);
-      await client.query("UPDATE products SET stock_quantity=stock_quantity-$1,updated_at=NOW() WHERE id=$2", [quantity, productId]);
-      await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'ITEM_ADDED',$3,$4)", [productId, -quantity, inserted.rows[0].id, user.id]);
-      await auditLog({ userId:user.id, action:"ITEM_ADDED", entityType:"COMMAND", entityId:commandId, description:`Adicionou ${quantity}× ${item.name} à comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}.`, metadata:{ commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, productId, productName:item.name, quantity, orderItemId:inserted.rows[0].id } }, client);
+      const factor = Number(item.stock_per_sale_unit);
+      const converted = Math.abs(factor - 1) > 0.0001;
+      if (converted && !Number.isInteger(quantity)) throw new Error("Este produto deve ser lançado em quantidade inteira de itens.");
+      const stockUsed = Math.round(quantity * factor * 1000) / 1000;
+      if (Number(item.stock_quantity) < stockUsed) throw new Error(`Estoque insuficiente. Disponível: ${item.stock_quantity} ${item.sale_unit}.`);
+      const displayUnit = converted ? "UNIT" : item.sale_unit;
+      const inserted = await client.query<{ id:number }>("INSERT INTO order_items (command_id,product_id,product_name,unit_price_cents,quantity,stock_quantity_used,destination,sale_unit,display_unit,added_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id", [commandId, productId, item.name, item.price_cents, quantity, stockUsed, item.destination, item.sale_unit, displayUnit, user.id]);
+      await client.query("UPDATE products SET stock_quantity=stock_quantity-$1,updated_at=NOW() WHERE id=$2", [stockUsed, productId]);
+      await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'ITEM_ADDED',$3,$4)", [productId, -stockUsed, inserted.rows[0].id, user.id]);
+      const stockDetail = converted ? ` Baixa de estoque: ${stockUsed} ${item.sale_unit}.` : "";
+      await auditLog({ userId:user.id, action:"ITEM_ADDED", entityType:"COMMAND", entityId:commandId, description:`Adicionou ${quantity}× ${item.name} à comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}.${stockDetail}`, metadata:{ commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, productId, productName:item.name, quantity, stockUsed, stockUnit:item.sale_unit, orderItemId:inserted.rows[0].id } }, client);
     });
   } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível adicionar o item."); }
   revalidatePath(`/comandas/${commandId}`);
@@ -130,13 +149,13 @@ export async function removeItemAction(formData: FormData) {
   const itemId = positiveId(formData.get("itemId"));
   try {
     await transaction(async (client) => {
-      const item = await client.query<{ product_id:number;product_name:string;quantity:number|string;status:string;command_number:number;display_label:string }>("SELECT oi.product_id,oi.product_name,oi.quantity,oi.status,c.command_number,tl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN table_locations tl ON tl.table_id=c.table_id WHERE oi.id=$1 AND oi.command_id=$2 AND c.status='OPEN' FOR UPDATE OF oi,c", [itemId, commandId]);
+      const item = await client.query<{ product_id:number;product_name:string;quantity:number|string;stock_quantity_used:number|string;sale_unit:string;status:string;command_number:number;display_label:string }>("SELECT oi.product_id,oi.product_name,oi.quantity,oi.stock_quantity_used,oi.sale_unit,oi.status,c.command_number,tl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN table_locations tl ON tl.table_id=c.table_id WHERE oi.id=$1 AND oi.command_id=$2 AND c.status='OPEN' FOR UPDATE OF oi,c", [itemId, commandId]);
       const current = item.rows[0];
       if (!current || current.status === "CANCELLED") throw new Error("Item não pode ser removido.");
       await client.query("UPDATE order_items SET status='CANCELLED',cancelled_at=NOW() WHERE id=$1", [itemId]);
-      await client.query("UPDATE products SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [current.quantity, current.product_id]);
-      await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'ITEM_REMOVED',$3,$4)", [current.product_id, current.quantity, itemId, user.id]);
-      await auditLog({ userId:user.id, action:"ITEM_REMOVED", entityType:"COMMAND", entityId:commandId, description:`Removeu ${current.quantity}× ${current.product_name} da comanda #${current.command_number}, ${current.display_label}.`, metadata:{ commandNumber:current.command_number, table:current.display_label, itemId, productId:current.product_id, productName:current.product_name, quantity:current.quantity } }, client);
+      await client.query("UPDATE products SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [current.stock_quantity_used, current.product_id]);
+      await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'ITEM_REMOVED',$3,$4)", [current.product_id, current.stock_quantity_used, itemId, user.id]);
+      await auditLog({ userId:user.id, action:"ITEM_REMOVED", entityType:"COMMAND", entityId:commandId, description:`Removeu ${current.quantity}× ${current.product_name} da comanda #${current.command_number}, ${current.display_label}. Estoque devolvido: ${current.stock_quantity_used} ${current.sale_unit}.`, metadata:{ commandNumber:current.command_number, table:current.display_label, itemId, productId:current.product_id, productName:current.product_name, quantity:current.quantity, stockReturned:current.stock_quantity_used, stockUnit:current.sale_unit } }, client);
     });
   } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível remover o item."); }
   revalidatePath(`/comandas/${commandId}`);
@@ -226,13 +245,10 @@ export async function closeCommandAction(formData: FormData) {
       const total = subtotal - discount + service;
       const paid = paymentValues.reduce((sum,[,amount]) => sum + amount, 0);
       if (paid !== total) throw new Error("A soma das formas de pagamento precisa ser igual ao total da conta.");
-      const cashReceived = cents(formData.get("cashReceived"));
-      const cashAmount = paymentValues[0][1];
-      if (cashAmount > 0 && cashReceived < cashAmount) throw new Error("O valor recebido em dinheiro é menor que o valor informado.");
       const cash = await client.query<{ id:number }>("SELECT id FROM cash_sessions WHERE status='OPEN' LIMIT 1 FOR UPDATE");
       if (!cash.rows[0]) throw new Error("Abra o caixa antes de finalizar a venda.");
       const sale = await client.query<{ id:number }>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,split_count,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [commandId, cash.rows[0].id, subtotal, discount, service, total, splitCount, user.id]);
-      for (const [method,amount] of paymentValues) if (amount > 0) await client.query("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents) VALUES ($1,$2,$3,$4,$5)", [sale.rows[0].id, method, amount, method === "CASH" ? cashReceived : null, method === "CASH" ? cashReceived - amount : 0]);
+      for (const [method,amount] of paymentValues) if (amount > 0) await client.query("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents) VALUES ($1,$2,$3,NULL,0)", [sale.rows[0].id, method, amount]);
       await client.query("UPDATE commands SET status='CLOSED',closed_at=NOW() WHERE id=$1", [commandId]);
       await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}, por ${moneyText(total)}.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, subtotal, discount, service, total, splitCount } }, client);
       return sale.rows[0].id;
@@ -253,10 +269,10 @@ export async function cancelCommandAction(formData: FormData) {
     await transaction(async (client) => {
       const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,tl.display_label FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("A comanda não está aberta.");
-      const items = await client.query<{ id:number;product_id:number;quantity:number|string }>("SELECT id,product_id,quantity FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' FOR UPDATE", [commandId]);
+      const items = await client.query<{ id:number;product_id:number;stock_quantity_used:number|string }>("SELECT id,product_id,stock_quantity_used FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' FOR UPDATE", [commandId]);
       for (const item of items.rows) {
-        await client.query("UPDATE products SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [item.quantity, item.product_id]);
-        await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'COMMAND_CANCELLED',$3,$4)", [item.product_id, item.quantity, item.id, user.id]);
+        await client.query("UPDATE products SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [item.stock_quantity_used, item.product_id]);
+        await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'COMMAND_CANCELLED',$3,$4)", [item.product_id, item.stock_quantity_used, item.id, user.id]);
       }
       await client.query("UPDATE order_items SET status='CANCELLED',cancelled_at=NOW() WHERE command_id=$1 AND status<>'CANCELLED'", [commandId]);
       await client.query("UPDATE commands SET status='CANCELLED',closed_at=NOW(),cancelled_by=$1,cancellation_reason=$2 WHERE id=$3", [user.id, reason, commandId]);
@@ -280,11 +296,14 @@ export async function createProductAction(formData: FormData) {
   const minStock = Math.max(0, quantityValue(formData.get("minStock")));
   if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail("/produtos", "Preencha os dados do produto.");
   let image:null|{data:Buffer;mime:string}=null;
+  let stockPerSaleUnit = 1;
+  try { stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit); }
+  catch(error) { fail("/produtos", error instanceof Error ? error.message : "Revise a baixa de estoque por item."); }
   try { image=await readProductImage(formData.get("image")); }
   catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível processar a foto."); }
   await transaction(async (client) => {
-    const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,image_data,image_mime,image_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,CASE WHEN $8::bytea IS NULL THEN NULL ELSE NOW() END) RETURNING id", [name, category, price, stock, minStock, destination, saleUnit, image?.data??null, image?.mime??null]);
-    await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.`, metadata:{ category, stock, minStock, destination, saleUnit, hasImage:Boolean(image) } }, client);
+    const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,stock_per_sale_unit,image_data,image_mime,image_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $9::bytea IS NULL THEN NULL ELSE NOW() END) RETURNING id", [name, category, price, stock, minStock, destination, saleUnit, stockPerSaleUnit, image?.data??null, image?.mime??null]);
+    await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}. Cada item vendido baixa ${stockPerSaleUnit} ${saleUnit} do estoque.`, metadata:{ category, stock, minStock, destination, saleUnit, stockPerSaleUnit, hasImage:Boolean(image) } }, client);
   });
   revalidatePath("/produtos");
   revalidatePath("/estoque");
@@ -305,20 +324,23 @@ export async function updateProductAction(formData: FormData) {
   const removeImage = formData.get("removeImage") === "on";
   if (!name || !category || !["KITCHEN","BAR","DIRECT"].includes(destination) || !["UNIT","KG","L","PORTION","DOSE","BOTTLE","CAN"].includes(saleUnit)) fail(`/produtos/${productId}`, "Revise os dados do produto.");
   let image:null|{data:Buffer;mime:string}=null;
+  let stockPerSaleUnit = 1;
+  try { stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit); }
+  catch(error) { fail(`/produtos/${productId}`, error instanceof Error ? error.message : "Revise a baixa de estoque por item."); }
   try { image=await readProductImage(formData.get("image")); }
   catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível processar a foto."); }
   try {
     await transaction(async (client) => {
-      const current = await client.query<{name:string;stock_quantity:number|string;price_cents:number;min_stock:number|string;has_image:boolean}>("SELECT name,stock_quantity,price_cents,min_stock,(image_data IS NOT NULL) AS has_image FROM products WHERE id=$1 FOR UPDATE",[productId]);
+      const current = await client.query<{name:string;stock_quantity:number|string;price_cents:number;min_stock:number|string;stock_per_sale_unit:number|string;has_image:boolean}>("SELECT name,stock_quantity,price_cents,min_stock,stock_per_sale_unit,(image_data IS NOT NULL) AS has_image FROM products WHERE id=$1 FOR UPDATE",[productId]);
       if(!current.rows[0]) throw new Error("Produto não encontrado.");
       const old=current.rows[0]; const difference=Math.round((stock-Number(old.stock_quantity))*1000)/1000;
-      await client.query(`UPDATE products SET name=$1,category=$2,price_cents=$3,stock_quantity=$4,min_stock=$5,destination=$6,sale_unit=$7,active=$8,
-        image_data=CASE WHEN $9::boolean THEN NULL WHEN $10::bytea IS NOT NULL THEN $10 ELSE image_data END,
-        image_mime=CASE WHEN $9::boolean THEN NULL WHEN $10::bytea IS NOT NULL THEN $11 ELSE image_mime END,
-        image_updated_at=CASE WHEN $9::boolean THEN NOW() WHEN $10::bytea IS NOT NULL THEN NOW() ELSE image_updated_at END,updated_at=NOW() WHERE id=$12`,
-        [name,category,price,stock,minStock,destination,saleUnit,active,removeImage,image?.data??null,image?.mime??null,productId]);
+      await client.query(`UPDATE products SET name=$1,category=$2,price_cents=$3,stock_quantity=$4,min_stock=$5,destination=$6,sale_unit=$7,stock_per_sale_unit=$8,active=$9,
+        image_data=CASE WHEN $10::boolean THEN NULL WHEN $11::bytea IS NOT NULL THEN $11 ELSE image_data END,
+        image_mime=CASE WHEN $10::boolean THEN NULL WHEN $11::bytea IS NOT NULL THEN $12 ELSE image_mime END,
+        image_updated_at=CASE WHEN $10::boolean THEN NOW() WHEN $11::bytea IS NOT NULL THEN NOW() ELSE image_updated_at END,updated_at=NOW() WHERE id=$13`,
+        [name,category,price,stock,minStock,destination,saleUnit,stockPerSaleUnit,active,removeImage,image?.data??null,image?.mime??null,productId]);
       if(difference!==0) await client.query("INSERT INTO stock_movements (product_id,quantity,reason,user_id) VALUES ($1,$2,'PRODUCT_EDIT',$3)",[productId,difference,user.id]);
-      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}, estoque ${old.stock_quantity} → ${stock}, mínimo ${old.min_stock} → ${minStock}.`,metadata:{name,category,price,stock,minStock,destination,saleUnit,active,imageChanged:Boolean(image)||removeImage}},client);
+      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}, estoque ${old.stock_quantity} → ${stock}, mínimo ${old.min_stock} → ${minStock}, baixa por item ${old.stock_per_sale_unit} → ${stockPerSaleUnit} ${saleUnit}.`,metadata:{name,category,price,stock,minStock,destination,saleUnit,stockPerSaleUnit,active,imageChanged:Boolean(image)||removeImage}},client);
     });
   } catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível atualizar o produto."); }
   revalidatePath("/produtos"); revalidatePath(`/produtos/${productId}`); revalidatePath("/estoque"); revalidatePath("/comandas");
@@ -575,10 +597,10 @@ export async function cancelSaleAction(formData: FormData) {
     await transaction(async (client) => {
       const sale = await client.query<{ command_id:number;status:string;total_cents:number;command_number:number;display_label:string }>("SELECT s.command_id,s.status,s.total_cents,c.command_number,tl.display_label FROM sales s JOIN commands c ON c.id=s.command_id JOIN table_locations tl ON tl.table_id=c.table_id WHERE s.id=$1 FOR UPDATE OF s", [saleId]);
       if (!sale.rows[0] || sale.rows[0].status !== "COMPLETED") throw new Error("Venda não pode ser cancelada.");
-      const items = await client.query<{ id:number;product_id:number;quantity:number }>("SELECT id,product_id,quantity FROM order_items WHERE command_id=$1 AND status<>'CANCELLED'", [sale.rows[0].command_id]);
+      const items = await client.query<{ id:number;product_id:number;stock_quantity_used:number|string }>("SELECT id,product_id,stock_quantity_used FROM order_items WHERE command_id=$1 AND status<>'CANCELLED'", [sale.rows[0].command_id]);
       for (const item of items.rows) {
-        await client.query("UPDATE products SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [item.quantity, item.product_id]);
-        await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'SALE_CANCELLED',$3,$4)", [item.product_id, item.quantity, item.id, user.id]);
+        await client.query("UPDATE products SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [item.stock_quantity_used, item.product_id]);
+        await client.query("INSERT INTO stock_movements (product_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,'SALE_CANCELLED',$3,$4)", [item.product_id, item.stock_quantity_used, item.id, user.id]);
       }
       await client.query("UPDATE sales SET status='CANCELLED',cancelled_by=$1,cancelled_at=NOW(),cancellation_reason=$2 WHERE id=$3", [user.id, reason, saleId]);
       await client.query("UPDATE commands SET status='CANCELLED' WHERE id=$1", [sale.rows[0].command_id]);

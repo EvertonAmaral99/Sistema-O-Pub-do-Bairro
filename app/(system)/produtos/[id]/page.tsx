@@ -8,7 +8,7 @@ import { query } from "@/lib/db";
 
 type ProductRow = {
   id:number; name:string; category:string; price_cents:number; stock_quantity:number|string; min_stock:number|string;
-  destination:string; sale_unit:string; active:boolean; has_image:boolean; image_updated_at:string|null;
+  destination:string; sale_unit:string; stock_per_sale_unit:number|string; active:boolean; has_image:boolean; image_updated_at:string|null;
 };
 
 export default async function EditProductPage({ params, searchParams }: { params:Promise<{id:string}>; searchParams:Promise<{erro?:string}> }) {
@@ -16,7 +16,7 @@ export default async function EditProductPage({ params, searchParams }: { params
   const productId = Number((await params).id);
   const { erro } = await searchParams;
   if (!Number.isInteger(productId) || productId < 1) notFound();
-  const result = await query<ProductRow>(`SELECT id,name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,active,
+  const result = await query<ProductRow>(`SELECT id,name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,stock_per_sale_unit,active,
     (image_data IS NOT NULL) AS has_image,image_updated_at FROM products WHERE id=$1`,[productId]);
   const product = result.rows[0];
   if (!product) notFound();
@@ -32,6 +32,7 @@ export default async function EditProductPage({ params, searchParams }: { params
         <div className="field"><label>Preço (R$)</label><input className="input" name="price" type="number" min="0" step="0.01" defaultValue={(Number(product.price_cents)/100).toFixed(2)} required/></div>
         <div className="field"><label>Setor</label><select className="select" name="destination" defaultValue={product.destination}><option value="DIRECT">Entrega direta</option><option value="KITCHEN">Cozinha</option><option value="BAR">Bar</option></select></div>
         <div className="field"><label>Forma de controle</label><select className="select" name="saleUnit" defaultValue={product.sale_unit}><option value="UNIT">Unidade</option><option value="KG">Quilograma (kg)</option><option value="L">Litro (L)</option><option value="PORTION">Porção</option><option value="DOSE">Dose</option><option value="BOTTLE">Garrafa</option><option value="CAN">Lata</option></select></div>
+        <div className="field"><label>Baixa de estoque por item vendido</label><input className="input" name="stockPerSaleUnit" type="number" min="0.001" step="0.001" defaultValue={String(product.stock_per_sale_unit)} required/><small>Ex.: CHOPP 500ML controlado em litros deve usar 0,5.</small></div>
         <div className="field"><label>Quantidade em estoque</label><input className="input" name="stock" type="number" min="0" step="0.001" defaultValue={String(product.stock_quantity)} required/></div>
         <div className="field"><label>Estoque mínimo</label><input className="input" name="minStock" type="number" min="0" step="0.001" defaultValue={String(product.min_stock)} required/><small>Ao atingir este valor, o produto entra na lista de compras.</small></div>
         <div className="field"><label>Nova foto</label><input className="input file-input" name="image" type="file" accept="image/jpeg,image/png,image/webp"/><small>Deixe sem arquivo para manter a foto atual.</small></div>
