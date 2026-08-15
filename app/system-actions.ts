@@ -33,7 +33,7 @@ function stockPerSaleUnitValue(value: FormDataEntryValue | null, name: string, s
   const raw = String(value ?? "").trim();
   if (raw) {
     const manual = quantityValue(value);
-    if (manual <= 0) throw new Error("A baixa de estoque por item deve ser maior que zero.");
+    if (manual <= 0) throw new Error("O controle interno deste produto está inválido.");
     return manual;
   }
   if (saleUnit === "L") {
@@ -93,22 +93,53 @@ export async function closeCashAction(formData: FormData) {
 export async function openCommandAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandNumber = Math.trunc(numberValue(formData.get("commandNumber")));
-  const tableId = positiveId(formData.get("tableId"));
+  const tableIds = [...new Set(formData.getAll("tableIds").map((value)=>Math.trunc(numberValue(value))).filter((id)=>id>0))];
   const customerName = String(formData.get("customerName") ?? "").trim() || null;
   const notes = String(formData.get("notes") ?? "").trim() || null;
   if (commandNumber < 1) fail("/comandas", "Informe um número de comanda válido.");
+  if (tableIds.length < 1) fail("/comandas", "Selecione ao menos uma mesa para a comanda.");
   let commandId = 0;
   try {
     commandId = await transaction(async (client) => {
-      const table = await client.query<{ display_label:string }>("SELECT tl.display_label FROM bar_tables bt JOIN table_locations tl ON tl.table_id=bt.id WHERE bt.id=$1 AND bt.active=TRUE", [tableId]);
-      if (!table.rows[0]) throw new Error("Mesa indisponível.");
-      const created = await client.query<{ id:number }>("INSERT INTO commands (command_number,table_id,customer_name,opened_by,notes) VALUES ($1,$2,$3,$4,$5) RETURNING id", [commandNumber, tableId, customerName, user.id, notes]);
-      await auditLog({ userId:user.id, action:"COMMAND_OPENED", entityType:"COMMAND", entityId:created.rows[0].id, description:`Abriu a comanda #${commandNumber} em ${table.rows[0].display_label}.`, metadata:{ commandNumber, table:table.rows[0].display_label } }, client);
+      const tables = await client.query<{id:number;label:string;active:boolean}>("SELECT id,COALESCE(label,'Mesa '||number) AS label,active FROM bar_tables WHERE id=ANY($1::bigint[]) ORDER BY number FOR UPDATE",[tableIds]);
+      if(tables.rows.length!==tableIds.length||tables.rows.some((table)=>!table.active)) throw new Error("Uma das mesas selecionadas está indisponível.");
+      const occupied=await client.query<{label:string;command_number:number}>(`SELECT COALESCE(bt.label,'Mesa '||bt.number) AS label,c.command_number FROM command_tables ct JOIN commands c ON c.id=ct.command_id JOIN bar_tables bt ON bt.id=ct.table_id WHERE ct.table_id=ANY($1::bigint[]) AND c.status='OPEN' FOR UPDATE OF c`,[tableIds]);
+      if(occupied.rows.length>0) throw new Error(`${occupied.rows.map((row)=>row.label).join(", ")} já está em outra comanda aberta.`);
+      const primaryTableId=tables.rows[0].id;
+      const created = await client.query<{ id:number }>("INSERT INTO commands (command_number,table_id,customer_name,opened_by,notes) VALUES ($1,$2,$3,$4,$5) RETURNING id", [commandNumber, primaryTableId, customerName, user.id, notes]);
+      for(const table of tables.rows) await client.query("INSERT INTO command_tables (command_id,table_id) VALUES ($1,$2)",[created.rows[0].id,table.id]);
+      const displayLabel=tables.rows.map((table)=>table.label).join(" + ");
+      await auditLog({ userId:user.id, action:"COMMAND_OPENED", entityType:"COMMAND", entityId:created.rows[0].id, description:`Abriu a comanda #${commandNumber} em ${displayLabel}.`, metadata:{ commandNumber, tableIds:tables.rows.map((table)=>table.id), table:displayLabel } }, client);
       return created.rows[0].id;
     });
   } catch (error) {
-    fail("/comandas", error instanceof Error && error.message === "Mesa indisponível." ? error.message : "Esse número de comanda já está em uso.");
+    const message=error instanceof Error?error.message:"Não foi possível abrir a comanda.";
+    fail("/comandas",message.includes("duplicate key")?"Esse número de comanda já está em uso.":message);
   }
+  redirect(`/comandas/${commandId}`);
+}
+
+export async function updateCommandTablesAction(formData:FormData){
+  const user=await requirePermission("COMMANDS");
+  const commandId=positiveId(formData.get("commandId"));
+  const tableIds=[...new Set(formData.getAll("tableIds").map((value)=>Math.trunc(numberValue(value))).filter((id)=>id>0))];
+  if(tableIds.length<1) fail(`/comandas/${commandId}`,"Selecione ao menos uma mesa para a comanda.");
+  try{
+    await transaction(async(client)=>{
+      const command=await client.query<{command_number:number;display_label:string}>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c",[commandId]);
+      if(!command.rows[0]) throw new Error("A comanda não está aberta.");
+      const tables=await client.query<{id:number;label:string;active:boolean}>("SELECT id,COALESCE(label,'Mesa '||number) AS label,active FROM bar_tables WHERE id=ANY($1::bigint[]) ORDER BY number FOR UPDATE",[tableIds]);
+      if(tables.rows.length!==tableIds.length||tables.rows.some((table)=>!table.active)) throw new Error("Uma das mesas selecionadas está indisponível.");
+      const occupied=await client.query<{label:string;command_number:number}>(`SELECT COALESCE(bt.label,'Mesa '||bt.number) AS label,c.command_number FROM command_tables ct JOIN commands c ON c.id=ct.command_id JOIN bar_tables bt ON bt.id=ct.table_id WHERE ct.table_id=ANY($1::bigint[]) AND c.status='OPEN' AND c.id<>$2 FOR UPDATE OF c`,[tableIds,commandId]);
+      if(occupied.rows.length>0) throw new Error(`${occupied.rows.map((row)=>row.label).join(", ")} já está em outra comanda aberta.`);
+      await client.query("DELETE FROM command_tables WHERE command_id=$1",[commandId]);
+      for(const table of tables.rows) await client.query("INSERT INTO command_tables (command_id,table_id) VALUES ($1,$2)",[commandId,table.id]);
+      await client.query("UPDATE commands SET table_id=$1 WHERE id=$2",[tables.rows[0].id,commandId]);
+      const displayLabel=tables.rows.map((table)=>table.label).join(" + ");
+      await auditLog({userId:user.id,action:"COMMAND_TABLES_UPDATED",entityType:"COMMAND",entityId:commandId,description:`Alterou as mesas da comanda #${command.rows[0].command_number}: ${command.rows[0].display_label} → ${displayLabel}.`,metadata:{commandNumber:command.rows[0].command_number,previousTables:command.rows[0].display_label,tableIds:tables.rows.map((table)=>table.id),tables:displayLabel}},client);
+    });
+  }catch(error){fail(`/comandas/${commandId}`,error instanceof Error?error.message:"Não foi possível alterar as mesas da comanda.");}
+  revalidatePath(`/comandas/${commandId}`);revalidatePath("/comandas");revalidatePath("/painel");revalidatePath("/cozinha");
   redirect(`/comandas/${commandId}`);
 }
 
@@ -120,23 +151,22 @@ export async function addItemAction(formData: FormData) {
   if (quantity <= 0) fail(`/comandas/${commandId}`, "Informe uma quantidade maior que zero.");
   try {
     await transaction(async (client) => {
-      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,tl.display_label FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
+      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda fechada.");
       const product = await client.query<{ name:string;price_cents:number;stock_pool_id:number;stock_quantity:number|string;stock_unlimited:boolean;destination:string;sale_unit:string;stock_per_sale_unit:number|string }>("SELECT p.name,p.price_cents,p.stock_pool_id,sp.stock_quantity,sp.unlimited AS stock_unlimited,p.destination,p.sale_unit,p.stock_per_sale_unit FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.id=$1 AND p.active=TRUE FOR UPDATE OF p,sp", [productId]);
       const item = product.rows[0];
       if (!item) throw new Error("Produto indisponível.");
       const factor = Number(item.stock_per_sale_unit);
-      const converted = Math.abs(factor - 1) > 0.0001;
-      if (converted && !Number.isInteger(quantity)) throw new Error("Este produto deve ser lançado em quantidade inteira de itens.");
+      if (!Number.isInteger(quantity)) throw new Error("Os produtos devem ser lançados por unidade.");
       const stockUsed = item.stock_unlimited ? 0 : Math.round(quantity * factor * 1000) / 1000;
       if (!item.stock_unlimited && Number(item.stock_quantity) < stockUsed) throw new Error(`Estoque insuficiente. Disponível: ${item.stock_quantity} ${item.sale_unit}.`);
-      const displayUnit = converted ? "UNIT" : item.sale_unit;
+      const displayUnit = "UNIT";
       const inserted = await client.query<{ id:number }>("INSERT INTO order_items (command_id,product_id,stock_pool_id,product_name,unit_price_cents,quantity,stock_quantity_used,destination,sale_unit,display_unit,added_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id", [commandId, productId, item.stock_pool_id, item.name, item.price_cents, quantity, stockUsed, item.destination, item.sale_unit, displayUnit, user.id]);
       if (!item.stock_unlimited) {
         await client.query("UPDATE stock_pools SET stock_quantity=stock_quantity-$1,updated_at=NOW() WHERE id=$2", [stockUsed, item.stock_pool_id]);
         await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,$3,'ITEM_ADDED',$4,$5)", [productId, item.stock_pool_id, -stockUsed, inserted.rows[0].id, user.id]);
       }
-      const stockDetail = item.stock_unlimited ? " Estoque ilimitado." : converted ? ` Baixa de estoque: ${stockUsed} ${item.sale_unit}.` : "";
+      const stockDetail = item.stock_unlimited ? " Estoque ilimitado." : ` Baixa interna de estoque: ${stockUsed} ${item.sale_unit}.`;
       await auditLog({ userId:user.id, action:"ITEM_ADDED", entityType:"COMMAND", entityId:commandId, description:`Adicionou ${quantity}× ${item.name} à comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}.${stockDetail}`, metadata:{ commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, productId, productName:item.name, quantity, stockPoolId:item.stock_pool_id, stockUsed, stockUnlimited:item.stock_unlimited, stockUnit:item.sale_unit, orderItemId:inserted.rows[0].id } }, client);
     });
   } catch (error) { fail(`/comandas/${commandId}`, error instanceof Error ? error.message : "Não foi possível adicionar o item."); }
@@ -151,7 +181,7 @@ export async function removeItemAction(formData: FormData) {
   const itemId = positiveId(formData.get("itemId"));
   try {
     await transaction(async (client) => {
-      const item = await client.query<{ product_id:number;stock_pool_id:number;product_name:string;quantity:number|string;stock_quantity_used:number|string;sale_unit:string;status:string;command_number:number;display_label:string }>("SELECT oi.product_id,oi.stock_pool_id,oi.product_name,oi.quantity,oi.stock_quantity_used,oi.sale_unit,oi.status,c.command_number,tl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN table_locations tl ON tl.table_id=c.table_id WHERE oi.id=$1 AND oi.command_id=$2 AND c.status='OPEN' FOR UPDATE OF oi,c", [itemId, commandId]);
+      const item = await client.query<{ product_id:number;stock_pool_id:number;product_name:string;quantity:number|string;stock_quantity_used:number|string;sale_unit:string;status:string;command_number:number;display_label:string }>("SELECT oi.product_id,oi.stock_pool_id,oi.product_name,oi.quantity,oi.stock_quantity_used,oi.sale_unit,oi.status,c.command_number,cl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE oi.id=$1 AND oi.command_id=$2 AND c.status='OPEN' FOR UPDATE OF oi,c", [itemId, commandId]);
       const current = item.rows[0];
       if (!current || current.status === "CANCELLED") throw new Error("Item não pode ser removido.");
       await client.query("UPDATE order_items SET status='CANCELLED',cancelled_at=NOW() WHERE id=$1", [itemId]);
@@ -176,7 +206,7 @@ export async function updateCommandPriorityAction(formData: FormData) {
   if (priority && note.length < 3) fail(`/comandas/${commandId}`, "Informe o motivo da prioridade.");
   try {
     await transaction(async (client) => {
-      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,tl.display_label FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
+      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("A comanda não está aberta.");
       await client.query("UPDATE commands SET priority=$1,priority_note=$2,priority_updated_at=NOW(),priority_updated_by=$3 WHERE id=$4", [priority, priority ? note : null, user.id, commandId]);
       await auditLog({ userId:user.id, action:priority ? "COMMAND_PRIORITY_SET" : "COMMAND_PRIORITY_REMOVED", entityType:"COMMAND", entityId:commandId, description:priority ? `Marcou a comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}, como prioridade. Motivo: ${note}` : `Removeu a prioridade da comanda #${command.rows[0].command_number}, ${command.rows[0].display_label}.`, metadata:{ commandNumber:command.rows[0].command_number, table:command.rows[0].display_label, priority, note:priority ? note : null } }, client);
@@ -196,7 +226,7 @@ export async function sendKitchenAction(formData: FormData) {
   let ticketId = 0;
   try {
     ticketId = await transaction(async (client) => {
-      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,tl.display_label FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1 AND c.status='OPEN'", [commandId]);
+      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN'", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda fechada.");
       const items = await client.query<{ id:number }>("SELECT id FROM order_items WHERE command_id=$1 AND status='PENDING' AND destination IN ('KITCHEN','BAR') FOR UPDATE", [commandId]);
       if (!items.rowCount) throw new Error("Não há novos itens para enviar.");
@@ -219,7 +249,7 @@ export async function updateKitchenStatusAction(formData: FormData) {
   const status = String(formData.get("status") ?? "");
   if (!["PREPARING","READY","DELIVERED"].includes(status)) throw new Error("Situação inválida.");
   await transaction(async (client) => {
-    const item = await client.query<{ product_name:string;command_number:number;display_label:string }>("SELECT oi.product_name,c.command_number,tl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN table_locations tl ON tl.table_id=c.table_id WHERE oi.id=$1 AND oi.status<>'CANCELLED' FOR UPDATE OF oi", [itemId]);
+    const item = await client.query<{ product_name:string;command_number:number;display_label:string }>("SELECT oi.product_name,c.command_number,cl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE oi.id=$1 AND oi.status<>'CANCELLED' FOR UPDATE OF oi", [itemId]);
     if (!item.rows[0]) throw new Error("Item não encontrado.");
     await client.query("UPDATE order_items SET status=$1 WHERE id=$2", [status, itemId]);
     const labels:Record<string,string> = { PREPARING:"em preparo", READY:"pronto", DELIVERED:"entregue" };
@@ -237,7 +267,7 @@ export async function closeCommandAction(formData: FormData) {
   let saleId = 0;
   try {
     saleId = await transaction(async (client) => {
-      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,tl.display_label FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
+      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda não está aberta.");
       const pending = await client.query<{ count:string }>("SELECT COUNT(*)::text AS count FROM order_items WHERE command_id=$1 AND status='PENDING' AND destination IN ('KITCHEN','BAR')", [commandId]);
       if (Number(pending.rows[0]?.count) > 0) throw new Error("Envie os novos itens para a cozinha antes de fechar.");
@@ -272,7 +302,7 @@ export async function cancelCommandAction(formData: FormData) {
   if (reason.length < 3) fail(`/comandas/${commandId}`, "Informe o motivo do cancelamento.");
   try {
     await transaction(async (client) => {
-      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,tl.display_label FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
+      const command = await client.query<{ command_number:number;display_label:string }>("SELECT c.command_number,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("A comanda não está aberta.");
       const items = await client.query<{ id:number;product_id:number;stock_pool_id:number;stock_quantity_used:number|string }>("SELECT id,product_id,stock_pool_id,stock_quantity_used FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' FOR UPDATE", [commandId]);
       for (const item of items.rows) {
@@ -307,7 +337,7 @@ export async function createProductAction(formData: FormData) {
   let image:null|{data:Buffer;mime:string}=null;
   let stockPerSaleUnit = 1;
   try { stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit); }
-  catch(error) { fail("/produtos", error instanceof Error ? error.message : "Revise a baixa de estoque por item."); }
+  catch(error) { fail("/produtos", error instanceof Error ? error.message : "Revise o controle de estoque."); }
   try { image=await readProductImage(formData.get("image")); }
   catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível processar a foto."); }
   try {
@@ -332,7 +362,7 @@ export async function createProductAction(formData: FormData) {
       }
       const created = await client.query<{ id:number }>("INSERT INTO products (name,category,price_cents,stock_quantity,min_stock,destination,sale_unit,stock_per_sale_unit,stock_pool_id,image_data,image_mime,image_updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $10::bytea IS NULL THEN NULL ELSE NOW() END) RETURNING id", [name, category, price, effectiveStock, effectiveMinStock, destination, saleUnit, stockPerSaleUnit, stockPoolId, image?.data??null, image?.mime??null]);
       const stockDescription=sourceName?` Estoque compartilhado com ${sourceName}.`:effectiveUnlimited?" Estoque ilimitado.":` Estoque inicial: ${effectiveStock} ${saleUnit}; mínimo: ${effectiveMinStock} ${saleUnit}.`;
-      await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}. Cada item vendido baixa ${stockPerSaleUnit} ${saleUnit}.${stockDescription}`, metadata:{ category, stock:effectiveStock, minStock:effectiveMinStock, unlimited:effectiveUnlimited, stockPoolId, sourceProductId, sourceName, destination, saleUnit, stockPerSaleUnit, hasImage:Boolean(image) } }, client);
+      await auditLog({ userId:user.id, action:"PRODUCT_CREATED", entityType:"PRODUCT", entityId:created.rows[0].id, description:`Cadastrou o produto ${name} por ${moneyText(price)}.${stockDescription}`, metadata:{ category, stock:effectiveStock, minStock:effectiveMinStock, unlimited:effectiveUnlimited, stockPoolId, sourceProductId, sourceName, destination, saleUnit, stockPerSaleUnit, hasImage:Boolean(image) } }, client);
     });
   } catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível cadastrar o produto."); }
   revalidatePath("/produtos");
@@ -359,7 +389,7 @@ export async function updateProductAction(formData: FormData) {
   let image:null|{data:Buffer;mime:string}=null;
   let stockPerSaleUnit = 1;
   try { stockPerSaleUnit = stockPerSaleUnitValue(formData.get("stockPerSaleUnit"), name, saleUnit); }
-  catch(error) { fail(`/produtos/${productId}`, error instanceof Error ? error.message : "Revise a baixa de estoque por item."); }
+  catch(error) { fail(`/produtos/${productId}`, error instanceof Error ? error.message : "Revise o controle de estoque."); }
   try { image=await readProductImage(formData.get("image")); }
   catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível processar a foto."); }
   try {
@@ -409,7 +439,7 @@ export async function updateProductAction(formData: FormData) {
         image_updated_at=CASE WHEN $11::boolean THEN NOW() WHEN $12::bytea IS NOT NULL THEN NOW() ELSE image_updated_at END,updated_at=NOW() WHERE id=$14`,
         [name,category,price,effectiveStock,effectiveMinStock,destination,saleUnit,stockPerSaleUnit,stockPoolId,active,removeImage,image?.data??null,image?.mime??null,productId]);
       const stockDescription=sourceName?` Estoque compartilhado com ${sourceName}.`:effectiveUnlimited?" Estoque ilimitado.":` Estoque ${effectiveStock} ${saleUnit}; mínimo ${effectiveMinStock} ${saleUnit}.`;
-      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}, baixa por item ${old.stock_per_sale_unit} → ${stockPerSaleUnit} ${saleUnit}.${stockDescription}`,metadata:{name,category,price,stock:effectiveStock,minStock:effectiveMinStock,unlimited:effectiveUnlimited,stockPoolId,sourceProductId,sourceName,destination,saleUnit,stockPerSaleUnit,active,imageChanged:Boolean(image)||removeImage}},client);
+      await auditLog({userId:user.id,action:"PRODUCT_UPDATED",entityType:"PRODUCT",entityId:productId,description:`Atualizou o produto ${old.name}: valor ${moneyText(old.price_cents)} → ${moneyText(price)}.${stockDescription}`,metadata:{name,category,price,stock:effectiveStock,minStock:effectiveMinStock,unlimited:effectiveUnlimited,stockPoolId,sourceProductId,sourceName,destination,saleUnit,stockPerSaleUnit,previousStockFactor:old.stock_per_sale_unit,active,imageChanged:Boolean(image)||removeImage}},client);
     });
   } catch(error){ fail(`/produtos/${productId}`,error instanceof Error?error.message:"Não foi possível atualizar o produto."); }
   revalidatePath("/produtos"); revalidatePath(`/produtos/${productId}`); revalidatePath("/estoque"); revalidatePath("/comandas");
@@ -461,11 +491,10 @@ export async function updateTableAction(formData: FormData) {
   if (number < 1 || label.length > 80) fail(`/configuracoes/mesas/${tableId}`, "Revise o número e o nome da mesa.");
   try {
     await transaction(async (client) => {
-      const current = await client.query<{ number:number;label:string|null;combination_id:number|null }>(`SELECT bt.number,bt.label,tcm.combination_id FROM bar_tables bt LEFT JOIN table_combination_members tcm ON tcm.table_id=bt.id WHERE bt.id=$1 FOR UPDATE OF bt`, [tableId]);
+      const current = await client.query<{ number:number;label:string|null }>("SELECT number,label FROM bar_tables WHERE id=$1 FOR UPDATE", [tableId]);
       if (!current.rows[0]) throw new Error("Mesa não encontrada.");
-      if (!active && current.rows[0].combination_id) throw new Error("Desfaça a combinação antes de inativar esta mesa.");
       if (!active) {
-        const openCommands = await client.query<{ count:string }>("SELECT COUNT(*)::text AS count FROM commands WHERE table_id=$1 AND status='OPEN'", [tableId]);
+        const openCommands = await client.query<{ count:string }>("SELECT COUNT(*)::text AS count FROM command_tables ct JOIN commands c ON c.id=ct.command_id WHERE ct.table_id=$1 AND c.status='OPEN'", [tableId]);
         if (Number(openCommands.rows[0]?.count) > 0) throw new Error("Esta mesa possui comandas abertas e não pode ser inativada.");
       }
       await client.query("UPDATE bar_tables SET number=$1,label=$2,active=$3 WHERE id=$4", [number, label, active, tableId]);
@@ -475,50 +504,6 @@ export async function updateTableAction(formData: FormData) {
   revalidatePath("/configuracoes");
   revalidatePath("/comandas");
   revalidatePath("/cozinha");
-  redirect("/configuracoes");
-}
-
-export async function combineTablesAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
-  const tableIds = [...new Set(formData.getAll("tableIds").map((value) => Math.trunc(numberValue(value))).filter((id) => id > 0))];
-  if (tableIds.length < 2) fail("/configuracoes", "Selecione pelo menos duas mesas para combinar.");
-  try {
-    await transaction(async (client) => {
-      const tables = await client.query<{ id:number;label:string;active:boolean }>("SELECT id,COALESCE(label,'Mesa '||number) AS label,active FROM bar_tables WHERE id=ANY($1::bigint[]) ORDER BY number FOR UPDATE", [tableIds]);
-      if (tables.rows.length !== tableIds.length) throw new Error("Uma das mesas não foi encontrada.");
-      if (tables.rows.some((table) => !table.active)) throw new Error("Somente mesas ativas podem ser combinadas.");
-      const memberships = await client.query("SELECT table_id FROM table_combination_members WHERE table_id=ANY($1::bigint[]) FOR UPDATE", [tableIds]);
-      if (memberships.rows.length > 0) throw new Error("Uma das mesas já está combinada. Desfaça a combinação atual antes de criar outra.");
-      const combination = await client.query<{ id:number }>("INSERT INTO table_combinations (created_by) VALUES ($1) RETURNING id", [user.id]);
-      for (const tableId of tableIds) await client.query("INSERT INTO table_combination_members (combination_id,table_id) VALUES ($1,$2)", [combination.rows[0].id, tableId]);
-      const displayLabel = tables.rows.map((table) => table.label).join(" + ");
-      await auditLog({ userId:user.id, action:"TABLES_COMBINED", entityType:"TABLE_COMBINATION", entityId:combination.rows[0].id, description:`Combinou as mesas: ${displayLabel}.`, metadata:{ tableIds, displayLabel } }, client);
-    });
-  } catch (error) { fail("/configuracoes", error instanceof Error ? error.message : "Não foi possível combinar as mesas."); }
-  revalidatePath("/configuracoes");
-  revalidatePath("/comandas");
-  revalidatePath("/cozinha");
-  revalidatePath("/painel");
-  redirect("/configuracoes");
-}
-
-export async function uncombineTablesAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
-  const combinationId = positiveId(formData.get("combinationId"));
-  try {
-    await transaction(async (client) => {
-      const combination = await client.query<{ id:number }>("SELECT id FROM table_combinations WHERE id=$1 FOR UPDATE", [combinationId]);
-      if (!combination.rows[0]) throw new Error("Combinação não encontrada.");
-      const tables = await client.query<{ id:number;label:string }>("SELECT bt.id,COALESCE(bt.label,'Mesa '||bt.number) AS label FROM table_combination_members tcm JOIN bar_tables bt ON bt.id=tcm.table_id WHERE tcm.combination_id=$1 ORDER BY bt.number", [combinationId]);
-      await client.query("DELETE FROM table_combinations WHERE id=$1", [combinationId]);
-      const displayLabel = tables.rows.map((table) => table.label).join(" + ");
-      await auditLog({ userId:user.id, action:"TABLES_UNCOMBINED", entityType:"TABLE_COMBINATION", entityId:combinationId, description:`Desfez a combinação: ${displayLabel}.`, metadata:{ tableIds:tables.rows.map((table) => table.id), displayLabel } }, client);
-    });
-  } catch (error) { fail("/configuracoes", error instanceof Error ? error.message : "Não foi possível desfazer a combinação."); }
-  revalidatePath("/configuracoes");
-  revalidatePath("/comandas");
-  revalidatePath("/cozinha");
-  revalidatePath("/painel");
   redirect("/configuracoes");
 }
 
@@ -666,7 +651,7 @@ export async function cancelSaleAction(formData: FormData) {
   if (reason.length < 4) fail("/relatorios", "Informe o motivo do cancelamento.");
   try {
     await transaction(async (client) => {
-      const sale = await client.query<{ command_id:number;status:string;total_cents:number;command_number:number;display_label:string }>("SELECT s.command_id,s.status,s.total_cents,c.command_number,tl.display_label FROM sales s JOIN commands c ON c.id=s.command_id JOIN table_locations tl ON tl.table_id=c.table_id WHERE s.id=$1 FOR UPDATE OF s", [saleId]);
+      const sale = await client.query<{ command_id:number;status:string;total_cents:number;command_number:number;display_label:string }>("SELECT s.command_id,s.status,s.total_cents,c.command_number,cl.display_label FROM sales s JOIN commands c ON c.id=s.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE s.id=$1 FOR UPDATE OF s", [saleId]);
       if (!sale.rows[0] || sale.rows[0].status !== "COMPLETED") throw new Error("Venda não pode ser cancelada.");
       const items = await client.query<{ id:number;product_id:number;stock_pool_id:number;stock_quantity_used:number|string }>("SELECT id,product_id,stock_pool_id,stock_quantity_used FROM order_items WHERE command_id=$1 AND status<>'CANCELLED'", [sale.rows[0].command_id]);
       for (const item of items.rows) {

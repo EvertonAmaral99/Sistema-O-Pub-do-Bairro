@@ -11,30 +11,29 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
   await requirePermission("COMMANDS");
   const { erro } = await searchParams;
   const [tables, commands] = await Promise.all([
-    query<{ id: number; number: number; label: string }>(`SELECT id,number,label FROM (
-      SELECT DISTINCT ON (COALESCE(tl.combination_id,-bt.id)) bt.id,bt.number,tl.display_label AS label
-      FROM bar_tables bt JOIN table_locations tl ON tl.table_id=bt.id WHERE bt.active=TRUE
-      ORDER BY COALESCE(tl.combination_id,-bt.id),bt.number
-    ) choices ORDER BY number`),
-    query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; items: string; total: string; priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,tl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
+    query<{ id: number; number: number; label: string; occupied_by:number|null }>(`SELECT bt.id,bt.number,COALESCE(bt.label,'Mesa '||bt.number) AS label,
+      MAX(c.command_number) FILTER (WHERE c.status='OPEN') AS occupied_by
+      FROM bar_tables bt LEFT JOIN command_tables ct ON ct.table_id=bt.id LEFT JOIN commands c ON c.id=ct.command_id AND c.status='OPEN'
+      WHERE bt.active=TRUE GROUP BY bt.id ORDER BY bt.number`),
+    query<{ id: number; command_number: number; table_display: string; customer_name: string | null; opened_at: string; items: string; total: string; priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,cl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
       COALESCE(SUM(oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS items,
       COALESCE(SUM(oi.unit_price_cents*oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS total
-      FROM commands c JOIN table_locations tl ON tl.table_id=c.table_id LEFT JOIN order_items oi ON oi.command_id=c.id
-      WHERE c.status='OPEN' GROUP BY c.id,tl.display_label ORDER BY c.priority DESC,c.opened_at`),
+      FROM commands c JOIN command_locations cl ON cl.command_id=c.id LEFT JOIN order_items oi ON oi.command_id=c.id
+      WHERE c.status='OPEN' GROUP BY c.id,cl.display_label ORDER BY c.priority DESC,c.opened_at`),
   ]);
   return (
     <>
       <LiveRefresh/>
-      <div className="page-head"><div><p className="eyebrow">Atendimento</p><h2>Mesas e comandas</h2><p>Cada comanda fica vinculada à mesa ou combinação escolhida.</p></div><span className="badge badge-blue"><Radio size={13}/> Atualização automática</span></div>
+      <div className="page-head"><div><p className="eyebrow">Atendimento</p><h2>Mesas e comandas</h2><p>Escolha uma ou várias mesas para cada comanda.</p></div><span className="badge badge-blue"><Radio size={13}/> Atualização automática</span></div>
       {erro && <div className="alert alert-error">{erro}</div>}
       <section className="card" style={{ marginBottom: 22 }}>
         <h3><Plus size={17}/> Abrir nova comanda</h3>
         <form action={openCommandAction} className="form-grid">
           <div className="field"><label>Número da comanda</label><input className="input" name="commandNumber" type="number" min="1" required autoFocus /></div>
-          <div className="field"><label>Mesa</label><select className="select" name="tableId" required><option value="">Selecione</option>{tables.rows.map((table) => <option key={table.id} value={table.id}>{table.label}</option>)}</select></div>
           <div className="field"><label>Nome do cliente (opcional)</label><input className="input" name="customerName" /></div>
           <div className="field"><label>Observação (opcional)</label><input className="input" name="notes" /></div>
-          <div><button className="btn btn-primary" type="submit">Abrir comanda</button></div>
+          <div className="field span-2"><label>Mesas desta comanda</label><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className={`table-choice ${table.occupied_by?"table-choice-disabled":""}`} key={table.id}><input type="checkbox" name="tableIds" value={table.id} disabled={Boolean(table.occupied_by)}/><span><strong>{table.label}</strong><small>{table.occupied_by?`Em uso na comanda #${table.occupied_by}`:`Mesa ${table.number} disponível`}</small></span></label>)}</div><small>Marque uma mesa ou várias mesas que ficarão sob a mesma comanda.</small></div>
+          <div className="form-submit-field"><button className="btn btn-primary" type="submit">Abrir comanda</button></div>
         </form>
       </section>
       {commands.rows.length === 0 ? <div className="card empty">Nenhuma comanda aberta.</div> : <div className="command-grid">

@@ -19,7 +19,7 @@ type Props = {
   currentPoolId?: number;
   initialLinkedProductId?: number | null;
   initialSaleUnit?: string;
-  initialStockPerSaleUnit?: number | string;
+  storedStockFactor?: number | string;
   initialStock?: number | string;
   initialMinStock?: number | string;
   initialUnlimited?: boolean;
@@ -41,7 +41,7 @@ export function ProductStockFields({
   currentPoolId,
   initialLinkedProductId = null,
   initialSaleUnit = "UNIT",
-  initialStockPerSaleUnit = "",
+  storedStockFactor = "",
   initialStock = 0,
   initialMinStock = 0,
   initialUnlimited = false,
@@ -62,8 +62,8 @@ export function ProductStockFields({
   }
 
   return <>
-    <div className="field"><label>Forma de controle</label><select className="select" name="saleUnit" value={saleUnit} onChange={(event)=>{setSaleUnit(event.target.value);setSourceId("");setLinked(false);}}>{units.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></div>
-    <div className="field"><label>Baixa de estoque por item vendido</label><input className="input" name="stockPerSaleUnit" type="number" min="0.001" step="0.001" defaultValue={String(initialStockPerSaleUnit)} placeholder="Ex.: 0,5"/><small>Para CHOPP 500ML controlado em litros, use 0,5. Se ficar vazio, o sistema reconhece o ML pelo nome.</small></div>
+    <div className="field"><label>Unidade do estoque</label><select className="select" name="saleUnit" value={saleUnit} onChange={(event)=>{setSaleUnit(event.target.value);setSourceId("");setLinked(false);}}>{units.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select><small>Esta medida aparece somente no controle interno de estoque.</small></div>
+    {String(storedStockFactor)!==""&&<input type="hidden" name="stockPerSaleUnit" value={String(storedStockFactor)}/>}
 
     <section className="stock-link-panel span-2">
       <div className="stock-link-head"><div><strong>Controle de estoque</strong><small>Use um saldo próprio, compartilhe com outro produto ou marque como ilimitado.</small></div><button className={`btn ${linked?"btn-light":"btn-primary"}`} type="button" onClick={toggleLink}>{linked?<><Unlink size={16}/> Usar estoque separado</>:<><Link2 size={16}/> Vincular estoque</>}</button></div>

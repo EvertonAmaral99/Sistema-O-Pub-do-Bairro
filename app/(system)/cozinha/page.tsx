@@ -8,8 +8,8 @@ import { requirePermission } from "@/lib/auth";
 
 export default async function KitchenPage() {
   await requirePermission("KITCHEN");
-  const items = await query<{ id:number; product_name:string; quantity:number|string;display_unit:string; status:string; destination:string; command_number:number; table_display:string; sent_at:string;priority:boolean;priority_note:string|null }>(`SELECT oi.id,oi.product_name,oi.quantity,oi.display_unit,oi.status,oi.destination,c.command_number,tl.display_label AS table_display,oi.sent_at,c.priority,c.priority_note
-    FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN table_locations tl ON tl.table_id=c.table_id
+  const items = await query<{ id:number; product_name:string; quantity:number|string;display_unit:string; status:string; destination:string; command_number:number; table_display:string; sent_at:string;priority:boolean;priority_note:string|null }>(`SELECT oi.id,oi.product_name,oi.quantity,oi.display_unit,oi.status,oi.destination,c.command_number,cl.display_label AS table_display,oi.sent_at,c.priority,c.priority_note
+    FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id
     WHERE oi.status IN ('SENT','PREPARING','READY') ORDER BY c.priority DESC,CASE oi.status WHEN 'READY' THEN 1 WHEN 'PREPARING' THEN 2 ELSE 3 END,oi.sent_at`);
   const columns = [{status:"SENT",title:"Aguardando",badge:"badge-amber"},{status:"PREPARING",title:"Em preparo",badge:"badge-blue"},{status:"READY",title:"Prontos",badge:"badge-green"}];
   return <><LiveRefresh/><div className="page-head"><div><p className="eyebrow">Produção</p><h2>Cozinha e bar</h2><p>Atualize cada item conforme o andamento do pedido.</p></div><span className="badge badge-blue"><Radio size={13}/> Atualização automática</span></div>
