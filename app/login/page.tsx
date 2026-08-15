@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { loginAction } from "@/app/auth-actions";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
+import { BrandLogo } from "@/components/brand-logo";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <main className="auth-shell">
       <section className="auth-brand">
-        <div className="brand-mark"><div className="brand-badge">P</div><span>O Pub do Bairro</span></div>
+        <div className="brand-mark"><BrandLogo className="auth-logo" priority /></div>
         <div>
           <p className="eyebrow">Gestão do bar</p>
           <h1>Seu atendimento, em uma só tela.</h1>

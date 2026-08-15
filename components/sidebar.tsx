@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Boxes, ChefHat, CircleDollarSign, ClipboardList, LayoutDashboard, LogOut, Package, Settings } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
+import { BrandLogo } from "@/components/brand-logo";
 import type { SessionUser } from "@/lib/roles";
 import { roleLabel } from "@/lib/roles";
 
@@ -22,7 +23,7 @@ export function Sidebar({ user }: { user: SessionUser }) {
   const pathname = usePathname();
   return (
     <aside className="sidebar">
-      <div className="brand-mark"><div className="brand-badge">P</div><span>O Pub do Bairro</span></div>
+      <div className="brand-mark"><BrandLogo className="sidebar-logo" priority /></div>
       <nav>
         {links.filter((link) => (link.roles as readonly string[]).includes(user.role)).map((link) => {
           const Icon = link.icon;

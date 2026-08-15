@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { setupAction } from "@/app/auth-actions";
 import { query } from "@/lib/db";
+import { BrandLogo } from "@/components/brand-logo";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ export default async function SetupPage({ searchParams }: { searchParams: Promis
   return (
     <main className="auth-shell">
       <section className="auth-brand">
-        <div className="brand-mark"><div className="brand-badge">P</div><span>O Pub do Bairro</span></div>
+        <div className="brand-mark"><BrandLogo className="auth-logo" priority /></div>
         <div><p className="eyebrow">Primeiro acesso</p><h1>Vamos abrir as portas.</h1><p>Crie a conta principal. Ela terá acesso administrativo para cadastrar a equipe e configurar o bar.</p></div>
         <small style={{ color: "#877f73" }}>Configuração inicial protegida</small>
       </section>
