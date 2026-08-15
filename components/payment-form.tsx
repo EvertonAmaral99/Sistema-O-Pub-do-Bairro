@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Printer, Users } from "lucide-react";
+import { CircleCheck, CircleDollarSign, Printer, Users } from "lucide-react";
 import { closeCommandAction } from "@/app/system-actions";
 
 function toCents(value: string) { const n=Number(value||0); return Number.isFinite(n)?Math.round(n*100):0; }
@@ -22,8 +22,11 @@ export function PaymentForm({commandId,subtotal}:{commandId:number;subtotal:numb
     const total=subtotal-discountCents+serviceCents;
     const paid=[cash,pix,debit,credit,staffVoucher].reduce((sum,value)=>sum+toCents(value),0);
     const people=Math.max(1,Math.trunc(Number(splitCount)||1));
-    return{discountCents,serviceCents,total,paid,people,perPerson:Math.round(total/people),remaining:total-paid};
+    const remaining=total-paid;
+    const progress=total>0?Math.min(100,Math.max(0,(paid/total)*100)):0;
+    return{discountCents,serviceCents,total,paid,people,perPerson:Math.round(total/people),remaining,progress};
   },[discount,service,cash,pix,debit,credit,staffVoucher,splitCount,subtotal]);
+  const paymentComplete=calculation.total>0&&calculation.remaining===0;
 
   return <form action={closeCommandAction} target="_blank" className="form-stack">
     <input type="hidden" name="commandId" value={commandId}/>
@@ -33,6 +36,12 @@ export function PaymentForm({commandId,subtotal}:{commandId:number;subtotal:numb
     <div className="split-calculator"><div className="field"><label><Users size={14}/> Dividir entre quantas pessoas?</label><input className="input" name="splitCount" type="number" min="1" step="1" value={splitCount} onChange={e=>setSplitCount(e.target.value)}/></div><div><small>Valor por pessoa</small><strong>{brl(calculation.perPerson)}</strong>{calculation.total%calculation.people!==0&&<small>A última parte pode ter ajuste de centavos.</small>}</div></div>
 
     <p className="label payment-label">FORMAS DE PAGAMENTO</p>
+    <section className={`payment-balance ${paymentComplete?"payment-balance-complete":calculation.remaining<0?"payment-balance-over":""}`} aria-live="polite">
+      <div className="payment-balance-head"><span>{paymentComplete?<CircleCheck size={20}/>:<CircleDollarSign size={20}/>} {paymentComplete?"Pagamento completo":calculation.remaining<0?"Valor acima do total":"Saldo restante"}</span><strong>{brl(Math.abs(calculation.remaining))}</strong></div>
+      <div className="payment-progress" aria-hidden="true"><span style={{width:`${calculation.progress}%`}}/></div>
+      <div className="payment-balance-details"><span>Total da conta <strong>{brl(calculation.total)}</strong></span><span>Total informado <strong>{brl(calculation.paid)}</strong></span></div>
+      <small>{paymentComplete?"O fechamento e a impressão da notinha estão liberados.":calculation.remaining<0?`Retire ${brl(Math.abs(calculation.remaining))} de uma das formas de pagamento.`:"O saldo diminui conforme os valores são distribuídos entre as formas de pagamento."}</small>
+    </section>
     <div className="form-grid">
       <div className="field"><label>Pix (R$)</label><input className="input" name="pix" type="number" min="0" step="0.01" value={pix} onChange={e=>setPix(e.target.value)}/></div>
       <div className="field"><label>Dinheiro (R$)</label><input className="input" name="cash" type="number" min="0" step="0.01" value={cash} onChange={e=>setCash(e.target.value)}/></div>
@@ -41,7 +50,6 @@ export function PaymentForm({commandId,subtotal}:{commandId:number;subtotal:numb
       <div className="field"><label>Vale funcionário (R$)</label><input className="input" name="staffVoucher" type="number" min="0" step="0.01" value={staffVoucher} onChange={e=>setStaffVoucher(e.target.value)}/></div>
       <div className="field"><label>Formato da notinha</label><select className="select" name="format" defaultValue="80"><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
     </div>
-    <div className={`alert ${calculation.remaining===0?"alert-info":"alert-error"}`}><div className="total-row"><strong>{calculation.remaining>0?"Falta informar":calculation.remaining<0?"Valor acima do total":"Pagamento conferido"}</strong><strong>{brl(Math.abs(calculation.remaining))}</strong></div></div>
-    <button className="btn btn-primary" type="submit" disabled={calculation.remaining!==0}><Printer size={16}/> Finalizar e abrir notinha</button>
+    <button className="btn btn-primary" type="submit" disabled={!paymentComplete}><Printer size={16}/> Finalizar e abrir notinha</button>
   </form>;
 }
