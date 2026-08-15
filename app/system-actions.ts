@@ -482,7 +482,7 @@ export async function updateProductFinancialsAction(formData:FormData){
   if(cost>0&&price===0) fail("/financeiro","O preço de venda deve ser maior que zero quando há custo cadastrado.");
   try{
     await transaction(async(client)=>{
-      const current=await client.query<{name:string;cost_cents:number;price_cents:number}>("SELECT name,cost_cents,price_cents FROM products WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",[productId]);
+      const current=await client.query<{name:string;cost_cents:number;price_cents:number}>("SELECT name,cost_cents,price_cents FROM products WHERE id=$1 AND deleted_at IS NULL AND name NOT ILIKE '%ESTOQUE%' FOR UPDATE",[productId]);
       if(!current.rows[0]) throw new Error("Produto não encontrado.");
       const previous=current.rows[0];
       await client.query("UPDATE products SET cost_cents=$1,price_cents=$2,updated_at=NOW() WHERE id=$3",[cost,price,productId]);

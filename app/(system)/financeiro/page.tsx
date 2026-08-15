@@ -19,8 +19,8 @@ export default async function FinancePage({searchParams}:{searchParams:Promise<{
   const period=periods[periodKey];
   const [sales,costs,products]=await Promise.all([
     query<{count:string;total:string}>(`SELECT COUNT(*)::text AS count,COALESCE(SUM(s.total_cents),0)::text AS total FROM sales s WHERE s.status='COMPLETED' ${period.filter}`),
-    query<{total:string}>(`SELECT COALESCE(SUM(oi.unit_cost_cents*oi.quantity),0)::text AS total FROM order_items oi JOIN sales s ON s.command_id=oi.command_id WHERE s.status='COMPLETED' AND oi.status<>'CANCELLED' ${period.filter}`),
-    query<FinanceProduct>(`SELECT p.id,p.name,p.category,p.cost_cents,p.price_cents,p.stock_pool_id,sp.stock_quantity,p.stock_per_sale_unit,sp.sale_unit,sp.stock_kind,sp.unlimited,p.active FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.deleted_at IS NULL ORDER BY (p.cost_cents=0) DESC,p.active DESC,p.category,p.name`),
+    query<{total:string}>(`SELECT COALESCE(SUM(oi.unit_cost_cents*oi.quantity),0)::text AS total FROM order_items oi JOIN sales s ON s.command_id=oi.command_id WHERE s.status='COMPLETED' AND oi.status<>'CANCELLED' AND oi.product_name NOT ILIKE '%ESTOQUE%' ${period.filter}`),
+    query<FinanceProduct>(`SELECT p.id,p.name,p.category,p.cost_cents,p.price_cents,p.stock_pool_id,sp.stock_quantity,p.stock_per_sale_unit,sp.sale_unit,sp.stock_kind,sp.unlimited,p.active FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.deleted_at IS NULL AND p.name NOT ILIKE '%ESTOQUE%' ORDER BY (p.cost_cents=0) DESC,p.active DESC,p.category,p.name`),
   ]);
   const revenue=Number(sales.rows[0]?.total??0);
   const soldCost=Math.round(Number(costs.rows[0]?.total??0));
