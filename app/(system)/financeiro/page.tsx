@@ -11,7 +11,7 @@ type FinanceProduct = {
 };
 
 const periods={
-  hoje:{label:"Hoje",filter:"AND s.created_at >= (date_trunc('day',NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"},
+  hoje:{label:"Caixa atual",filter:"AND s.cash_session_id=(SELECT id FROM cash_sessions WHERE status='OPEN' LIMIT 1)"},
   mes:{label:"Este mês",filter:"AND s.created_at >= (date_trunc('month',NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"},
   tudo:{label:"Todo o período",filter:""},
 } as const;
