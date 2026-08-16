@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ImageIcon, Pencil, Trash2 } from "lucide-react";
+import { ImageIcon, Pencil, Search, Trash2 } from "lucide-react";
 import { createProductAction, deleteProductAction } from "@/app/system-actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { ProductStockFields, type DraftStockPool } from "@/components/product-stock-fields";
@@ -29,13 +29,14 @@ type ProductRow = {
   image_updated_at: string | null;
 };
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ erro?: string; busca?:string }> }) {
   const user = await requirePermission("PRODUCTS");
-  const { erro } = await searchParams;
+  const { erro,busca } = await searchParams;
+  const search=String(busca??"").trim();
   const [products,draftPoolsResult] = await Promise.all([
     query<ProductRow>(`SELECT p.id,p.name,p.category,p.cost_cents,p.price_cents,sp.stock_quantity,sp.min_stock,p.destination,p.sale_unit,p.stock_per_sale_unit,p.stock_pool_id,sp.stock_kind,sp.unlimited AS stock_unlimited,p.active,
       (SELECT COUNT(*) FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id AND linked.deleted_at IS NULL)::text AS stock_pool_products,
-      (p.image_data IS NOT NULL) AS has_image,p.image_updated_at FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.deleted_at IS NULL ORDER BY p.active DESC,p.category,p.name`),
+      (p.image_data IS NOT NULL) AS has_image,p.image_updated_at FROM products p JOIN stock_pools sp ON sp.id=p.stock_pool_id WHERE p.deleted_at IS NULL AND ($1='' OR p.name ILIKE '%'||$1||'%' OR p.category ILIKE '%'||$1||'%') ORDER BY p.active DESC,p.category,p.name`,[search]),
     query<{stock_kind:"DRAFT_BEER"|"DRAFT_WINE";stock_quantity:number|string}>(`SELECT stock_kind,stock_quantity FROM stock_pools WHERE stock_kind IN ('DRAFT_BEER','DRAFT_WINE') ORDER BY stock_kind`),
   ]);
   const draftPools:DraftStockPool[]=draftPoolsResult.rows.map((pool)=>({stockKind:pool.stock_kind,stockQuantity:pool.stock_quantity}));
@@ -57,9 +58,11 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         <div className="form-submit-field"><button className="btn btn-primary" type="submit">Cadastrar produto</button></div>
       </form>
     </section>
+    <form method="get" className="card product-management-search"><div className="field"><label>Buscar produto cadastrado</label><div className="live-product-search"><Search className="live-search-icon" size={19}/><input className="input" type="search" name="busca" defaultValue={search} placeholder="Digite o nome ou a categoria" autoComplete="off"/></div></div><button className="btn btn-primary" type="submit"><Search size={16}/> Buscar</button>{search&&<Link href="/produtos" className="btn btn-light">Limpar busca</Link>}<span className="live-search-result-count">{products.rows.length} produto(s) encontrado(s)</span></form>
+    {products.rows.length===0&&<div className="card empty">Nenhum produto encontrado com essa busca.</div>}
     <div className="table-wrap"><table><thead><tr><th>Foto</th><th>Produto</th><th>Categoria</th><th>Custo</th><th>Preço de venda</th><th>Margem</th><th>Setor</th><th>Estoque</th><th>Mínimo</th><th>Situação</th><th>Ação</th></tr></thead><tbody>{products.rows.map((product)=><tr key={product.id}>
       <td>{product.has_image ? <Image className="product-thumb" src={`/api/products/${product.id}/image?v=${encodeURIComponent(product.image_updated_at ?? "1")}`} alt={product.name} width={52} height={52} unoptimized/> : <span className="product-thumb product-thumb-empty"><ImageIcon size={19}/></span>}</td>
-      <td><strong>{product.name}</strong>{product.stock_kind&&<><br/><span className="badge badge-blue stock-shared-badge">{product.stock_kind==="DRAFT_BEER"?"Estoque: chopp cerveja":"Estoque: chopp vinho"}</span></>}{!product.stock_kind&&Number(product.stock_pool_products)>1&&<><br/><span className="badge badge-blue stock-shared-badge">Estoque compartilhado antigo</span></>}</td><td>{product.category}</td><td className="money">{formatMoney(product.cost_cents)}</td><td className="money">{formatMoney(product.price_cents)}</td><td className="number">{product.price_cents>0?`${(((product.price_cents-product.cost_cents)/product.price_cents)*100).toFixed(1).replace(".",",")}%`:"—"}</td><td>{area[product.destination]}</td><td className="number">{product.stock_unlimited?<span className="badge badge-blue">Ilimitado</span>:formatQuantity(product.stock_quantity,product.sale_unit)}</td><td className="number">{product.stock_unlimited?"—":formatQuantity(product.min_stock,product.sale_unit)}</td><td><span className={`badge ${!product.active?"badge-gray":!product.stock_unlimited&&Number(product.stock_quantity)<=Number(product.min_stock)?"badge-red":"badge-green"}`}>{!product.active?"Inativo":!product.stock_unlimited&&Number(product.stock_quantity)<=Number(product.min_stock)?"Estoque baixo":"Ativo"}</span></td><td><div className="actions"><Link href={`/produtos/${product.id}`} className="btn btn-light btn-small" title={`Editar ${product.name}`}><Pencil size={15}/> Editar</Link>{isManagementRole(user.role)&&<form action={deleteProductAction}><input type="hidden" name="productId" value={product.id}/><ConfirmSubmitButton className="btn btn-danger btn-small" message={`Excluir o cadastro de ${product.name}? O histórico de vendas será preservado.`}><Trash2 size={15}/> Excluir</ConfirmSubmitButton></form>}</div></td>
+      <td><strong>{product.name}</strong>{product.stock_kind&&<><br/><span className="badge badge-blue stock-shared-badge">{product.stock_kind==="DRAFT_BEER"?"Estoque: chopp pilsen":"Estoque: chopp vinho"}</span></>}{!product.stock_kind&&Number(product.stock_pool_products)>1&&<><br/><span className="badge badge-blue stock-shared-badge">Estoque compartilhado antigo</span></>}</td><td>{product.category}</td><td className="money">{formatMoney(product.cost_cents)}</td><td className="money">{formatMoney(product.price_cents)}</td><td className="number">{product.price_cents>0?`${(((product.price_cents-product.cost_cents)/product.price_cents)*100).toFixed(1).replace(".",",")}%`:"—"}</td><td>{area[product.destination]}</td><td className="number">{product.stock_unlimited?<span className="badge badge-blue">Ilimitado</span>:formatQuantity(product.stock_quantity,product.sale_unit)}</td><td className="number">{product.stock_unlimited?"—":formatQuantity(product.min_stock,product.sale_unit)}</td><td><span className={`badge ${!product.active?"badge-gray":!product.stock_unlimited&&Number(product.stock_quantity)<=Number(product.min_stock)?"badge-red":"badge-green"}`}>{!product.active?"Inativo":!product.stock_unlimited&&Number(product.stock_quantity)<=Number(product.min_stock)?"Estoque baixo":"Ativo"}</span></td><td><div className="actions"><Link href={`/produtos/${product.id}`} className="btn btn-light btn-small" title={`Editar ${product.name}`}><Pencil size={15}/> Editar</Link>{isManagementRole(user.role)&&<form action={deleteProductAction}><input type="hidden" name="productId" value={product.id}/><ConfirmSubmitButton className="btn btn-danger btn-small" message={`Excluir o cadastro de ${product.name}? O histórico de vendas será preservado.`}><Trash2 size={15}/> Excluir</ConfirmSubmitButton></form>}</div></td>
     </tr>)}</tbody></table></div>
   </>;
 }

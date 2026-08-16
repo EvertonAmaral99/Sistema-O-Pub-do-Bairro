@@ -36,13 +36,14 @@ function cpfValue(value: FormDataEntryValue | null) {
   return String(value ?? "").replace(/\D/g, "");
 }
 type SalePaymentMethod="CASH"|"PIX"|"DEBIT"|"CREDIT"|"STAFF_VOUCHER"|"STORE_CREDIT";
-type SalePaymentAllocation={method:SalePaymentMethod;amountCents:number;staffMemberName?:string;customerId?:number};
+type SalePaymentAllocation={method:SalePaymentMethod;amountCents:number;staffMemberId?:number;customerId?:number};
 const salePaymentMethods=new Set<SalePaymentMethod>(["CASH","PIX","DEBIT","CREDIT","STAFF_VOUCHER","STORE_CREDIT"]);
 function paymentAllocationsValue(formData:FormData):SalePaymentAllocation[]{
   const raw=String(formData.get("paymentAllocations")??"").trim();
   if(!raw){
     const legacy:Array<[SalePaymentMethod,number]>=[["CASH",cents(formData.get("cash"))],["PIX",cents(formData.get("pix"))],["DEBIT",cents(formData.get("debit"))],["CREDIT",cents(formData.get("credit"))],["STAFF_VOUCHER",cents(formData.get("staffVoucher"))]];
-    return legacy.filter(([,amountCents])=>amountCents>0).map(([method,amountCents])=>({method,amountCents,staffMemberName:method==="STAFF_VOUCHER"?"Funcionário não informado":undefined}));
+    if(legacy.some(([method,amountCents])=>method==="STAFF_VOUCHER"&&amountCents>0)) throw new Error("Atualize a página e selecione o funcionário responsável pelo vale.");
+    return legacy.filter(([,amountCents])=>amountCents>0).map(([method,amountCents])=>({method,amountCents}));
   }
   let parsed:unknown;
   try{parsed=JSON.parse(raw);}catch{throw new Error("As formas de pagamento estão inválidas.");}
@@ -53,11 +54,11 @@ function paymentAllocationsValue(formData:FormData):SalePaymentAllocation[]{
     const method=String(source.method??"") as SalePaymentMethod;
     const amountCents=Math.trunc(Number(source.amountCents));
     if(!salePaymentMethods.has(method)||!Number.isFinite(amountCents)||amountCents<=0) throw new Error("Um dos pagamentos está inválido.");
-    const staffMemberName=String(source.staffMemberName??"").trim().replace(/\s+/g," ");
+    const staffMemberId=Math.trunc(Number(source.staffMemberId));
     const customerId=Math.trunc(Number(source.customerId));
-    if(method==="STAFF_VOUCHER"&&staffMemberName.length<2) throw new Error("Informe o nome do funcionário responsável pelo vale.");
-    if(method==="STORE_CREDIT"&&customerId<1) throw new Error("Consulte e confirme o cliente antes de usar o crédito em loja.");
-    return{method,amountCents,staffMemberName:method==="STAFF_VOUCHER"?staffMemberName:undefined,customerId:method==="STORE_CREDIT"?customerId:undefined};
+    if(method==="STAFF_VOUCHER"&&(!Number.isSafeInteger(staffMemberId)||staffMemberId<1)) throw new Error("Selecione o funcionário responsável pelo vale.");
+    if(method==="STORE_CREDIT"&&(!Number.isSafeInteger(customerId)||customerId<1)) throw new Error("Consulte e confirme o cliente antes de usar o crédito em loja.");
+    return{method,amountCents,staffMemberId:method==="STAFF_VOUCHER"?staffMemberId:undefined,customerId:method==="STORE_CREDIT"?customerId:undefined};
   });
 }
 function stockPerSaleUnitValue(value: FormDataEntryValue | null, name: string, saleUnit: string) {
@@ -140,6 +141,45 @@ export async function addCustomerCreditAction(formData:FormData){
   redirect("/clientes?sucesso=credito");
 }
 
+export async function createStaffMemberAction(formData:FormData){
+  const user=await requireRole(["ADMIN","MANAGER"]);
+  const name=String(formData.get("name")??"").trim().replace(/\s+/g," ");
+  const cpf=cpfValue(formData.get("cpf"))||null;
+  const contact=String(formData.get("contact")??"").trim()||null;
+  const position=String(formData.get("position")??"").trim().replace(/\s+/g," ")||null;
+  if(name.length<2) fail("/funcionarios","Informe o nome do funcionário.");
+  if(cpf&&cpf.length!==11) fail("/funcionarios","Informe um CPF com 11 números ou deixe o campo vazio.");
+  try{
+    await transaction(async(client)=>{
+      const created=await client.query<{id:number}>("INSERT INTO staff_members (name,cpf,contact,position,created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id",[name,cpf,contact,position,user.id]);
+      await auditLog({userId:user.id,action:"STAFF_MEMBER_CREATED",entityType:"STAFF_MEMBER",entityId:created.rows[0].id,description:`Cadastrou ${name} na relação de funcionários para vales.`,metadata:{cpf,contact,position}},client);
+    });
+  }catch(error){
+    const message=error instanceof Error?error.message:"Não foi possível cadastrar o funcionário.";
+    fail("/funcionarios",message.includes("duplicate key")?"Já existe um funcionário cadastrado com esse CPF.":message);
+  }
+  revalidatePath("/funcionarios");
+  revalidatePath("/comandas");
+  redirect("/funcionarios?sucesso=cadastro");
+}
+
+export async function toggleStaffMemberStatusAction(formData:FormData){
+  const user=await requireRole(["ADMIN","MANAGER"]);
+  const staffMemberId=positiveId(formData.get("staffMemberId"));
+  const nextActive=formData.get("nextActive")==="true";
+  try{
+    await transaction(async(client)=>{
+      const staff=await client.query<{name:string;active:boolean}>("SELECT name,active FROM staff_members WHERE id=$1 FOR UPDATE",[staffMemberId]);
+      if(!staff.rows[0]) throw new Error("Funcionário não encontrado.");
+      await client.query("UPDATE staff_members SET active=$1,updated_at=NOW() WHERE id=$2",[nextActive,staffMemberId]);
+      await auditLog({userId:user.id,action:"STAFF_MEMBER_STATUS_CHANGED",entityType:"STAFF_MEMBER",entityId:staffMemberId,description:`${nextActive?"Ativou":"Inativou"} ${staff.rows[0].name} na relação de funcionários para vales.`,metadata:{active:nextActive}},client);
+    });
+  }catch(error){fail("/funcionarios",error instanceof Error?error.message:"Não foi possível alterar o funcionário.");}
+  revalidatePath("/funcionarios");
+  revalidatePath("/comandas");
+  redirect(`/funcionarios?sucesso=${nextActive?"ativado":"inativado"}`);
+}
+
 export async function settleStaffVoucherAction(formData:FormData){
   const user=await requireRole(["ADMIN","MANAGER"]);
   const paymentId=positiveId(formData.get("paymentId"));
@@ -148,7 +188,7 @@ export async function settleStaffVoucherAction(formData:FormData){
   if(!["PAID","PAYROLL_DISCOUNT"].includes(settlementType)) fail("/pendencias","Selecione como o vale foi quitado.");
   try{
     await transaction(async(client)=>{
-      const payment=await client.query<{amount_cents:number;staff_member_name:string;sale_id:number}>("SELECT amount_cents,staff_member_name,sale_id FROM payments WHERE id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='PENDING' FOR UPDATE",[paymentId]);
+      const payment=await client.query<{amount_cents:number;staff_member_name:string;sale_id:number}>("SELECT amount_cents,staff_member_name,sale_id FROM payments WHERE id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='PENDING' AND voided_at IS NULL FOR UPDATE",[paymentId]);
       if(!payment.rows[0]) throw new Error("Esse vale não está mais pendente.");
       await client.query("UPDATE payments SET staff_voucher_status='SETTLED',staff_voucher_settlement_type=$1,staff_voucher_settled_at=NOW(),staff_voucher_settled_by=$2,staff_voucher_settlement_note=$3 WHERE id=$4",[settlementType,user.id,note,paymentId]);
       const label=settlementType==="PAID"?"pago pelo funcionário":"descontado do pagamento";
@@ -157,6 +197,88 @@ export async function settleStaffVoucherAction(formData:FormData){
   }catch(error){fail("/pendencias",error instanceof Error?error.message:"Não foi possível quitar o vale.");}
   revalidatePath("/pendencias");
   redirect("/pendencias?sucesso=1");
+}
+
+export async function updateSaleMovementAction(formData:FormData):Promise<{error?:string;success?:boolean}>{
+  const user=await requireRole(["ADMIN","MANAGER"]);
+  let saleId=0;
+  let paymentAllocations:SalePaymentAllocation[]=[];
+  try{
+    saleId=positiveId(formData.get("saleId"));
+    paymentAllocations=paymentAllocationsValue(formData);
+  }catch(error){return{error:error instanceof Error?error.message:"Os dados do movimento estão inválidos."};}
+  const customerRaw=String(formData.get("customerId")??"").trim();
+  const customerId=customerRaw?Math.trunc(Number(customerRaw)):null;
+  if(customerId!==null&&(!Number.isSafeInteger(customerId)||customerId<1)) return{error:"O cliente selecionado está inválido."};
+  try{
+    await transaction(async(client)=>{
+      const sale=await client.query<{command_id:number;status:string;total_cents:number;customer_id:number|null;command_number:number|null;command_name:string|null;table_display:string}>("SELECT s.command_id,s.status,s.total_cents,s.customer_id,c.command_number,c.command_name,cl.display_label AS table_display FROM sales s JOIN commands c ON c.id=s.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE s.id=$1 FOR UPDATE OF s,c",[saleId]);
+      if(!sale.rows[0]||sale.rows[0].status!=="COMPLETED") throw new Error("Somente vendas concluídas podem ter o movimento alterado.");
+      const paid=paymentAllocations.reduce((sum,payment)=>sum+payment.amountCents,0);
+      if(paid!==Number(sale.rows[0].total_cents)) throw new Error(`A soma das formas de pagamento deve ser ${moneyText(Number(sale.rows[0].total_cents))}.`);
+      if(paymentAllocations.some((payment)=>payment.method==="STORE_CREDIT")&&!customerId) throw new Error("Selecione um cliente para usar Crédito em loja.");
+      paymentAllocations=paymentAllocations.map((payment)=>payment.method==="STORE_CREDIT"?{...payment,customerId:customerId as number}:payment);
+
+      const currentPayments=await client.query<{id:number;method:SalePaymentMethod;amount_cents:number;customer_id:number|null;staff_member_id:number|null;staff_member_name:string|null;staff_voucher_status:string|null}>("SELECT id,method,amount_cents,customer_id,staff_member_id,staff_member_name,staff_voucher_status FROM payments WHERE sale_id=$1 AND voided_at IS NULL ORDER BY id FOR UPDATE",[saleId]);
+      if(currentPayments.rows.some((payment)=>payment.method==="STAFF_VOUCHER"&&payment.staff_voucher_status==="SETTLED")) throw new Error("Esta venda possui vale já quitado. Revise a baixa antes de alterar as formas de pagamento.");
+
+      const staffMemberIds=[...new Set(paymentAllocations.filter((payment)=>payment.method==="STAFF_VOUCHER").map((payment)=>payment.staffMemberId as number))].sort((a,b)=>a-b);
+      const staffMembersById=new Map<number,string>();
+      if(staffMemberIds.length>0){
+        const staffMembers=await client.query<{id:number;name:string}>("SELECT id,name FROM staff_members WHERE id=ANY($1::bigint[]) AND active=TRUE ORDER BY id FOR SHARE",[staffMemberIds]);
+        if(staffMembers.rows.length!==staffMemberIds.length) throw new Error("Um dos funcionários selecionados não está ativo ou não foi encontrado.");
+        for(const staffMember of staffMembers.rows) staffMembersById.set(Number(staffMember.id),staffMember.name);
+      }
+
+      const oldStoreCredits=currentPayments.rows.filter((payment)=>payment.method==="STORE_CREDIT"&&payment.customer_id);
+      const customerIds=[...new Set([...oldStoreCredits.map((payment)=>Number(payment.customer_id)),...(customerId?[customerId]:[])])].sort((a,b)=>a-b);
+      const customerRows=customerIds.length>0?await client.query<{id:number;name:string;active:boolean;store_credit_balance_cents:number}>("SELECT id,name,active,store_credit_balance_cents FROM customers WHERE id=ANY($1::bigint[]) ORDER BY id FOR UPDATE",[customerIds]):{rows:[] as Array<{id:number;name:string;active:boolean;store_credit_balance_cents:number}>};
+      if(customerRows.rows.length!==customerIds.length) throw new Error("Um dos clientes vinculados ao movimento não foi encontrado.");
+      const customersById=new Map(customerRows.rows.map((customer)=>[Number(customer.id),customer]));
+      const selectedCustomer=customerId?customersById.get(customerId):null;
+      if(customerId&&(!selectedCustomer||!selectedCustomer.active)) throw new Error("O cliente selecionado está inativo ou não foi encontrado.");
+
+      const restoredByCustomer=new Map<number,number>();
+      for(const payment of oldStoreCredits){
+        const linkedCustomerId=Number(payment.customer_id);
+        restoredByCustomer.set(linkedCustomerId,(restoredByCustomer.get(linkedCustomerId)||0)+Number(payment.amount_cents));
+        await client.query("INSERT INTO customer_credit_movements (customer_id,amount_cents,movement_type,sale_id,payment_id,notes,created_by) VALUES ($1,$2,'SALE_REFUNDED',$3,$4,$5,$6)",[linkedCustomerId,payment.amount_cents,saleId,payment.id,`Crédito devolvido pela manutenção da venda #${saleId}`,user.id]);
+      }
+      for(const [linkedCustomerId,amount] of restoredByCustomer) await client.query("UPDATE customers SET store_credit_balance_cents=store_credit_balance_cents+$1,updated_at=NOW() WHERE id=$2",[amount,linkedCustomerId]);
+
+      await client.query("UPDATE payments SET staff_voucher_status='CANCELLED' WHERE sale_id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='PENDING' AND voided_at IS NULL",[saleId]);
+      await client.query("UPDATE payments SET voided_at=NOW(),voided_by=$1,void_reason='MOVEMENT_MAINTENANCE' WHERE sale_id=$2 AND voided_at IS NULL",[user.id,saleId]);
+
+      const newStoreCreditTotals=new Map<number,number>();
+      for(const payment of paymentAllocations) if(payment.method==="STORE_CREDIT"&&payment.customerId) newStoreCreditTotals.set(payment.customerId,(newStoreCreditTotals.get(payment.customerId)||0)+payment.amountCents);
+      for(const [linkedCustomerId,amount] of newStoreCreditTotals){
+        const customer=customersById.get(linkedCustomerId);
+        const balance=Number(customer?.store_credit_balance_cents??0)+(restoredByCustomer.get(linkedCustomerId)||0);
+        if(amount>balance) throw new Error(`O crédito disponível de ${customer?.name??"cliente"} é ${moneyText(balance)}.`);
+      }
+
+      for(const payment of paymentAllocations){
+        const staffMemberName=payment.staffMemberId?staffMembersById.get(payment.staffMemberId)??null:null;
+        const createdPayment=await client.query<{id:number}>("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents,customer_id,staff_member_id,staff_member_name,staff_voucher_status) VALUES ($1,$2,$3,NULL,0,$4,$5,$6,$7) RETURNING id",[saleId,payment.method,payment.amountCents,payment.customerId??null,payment.staffMemberId??null,staffMemberName,payment.method==="STAFF_VOUCHER"?"PENDING":null]);
+        if(payment.method==="STORE_CREDIT"&&payment.customerId){
+          await client.query("UPDATE customers SET store_credit_balance_cents=store_credit_balance_cents-$1,updated_at=NOW() WHERE id=$2",[payment.amountCents,payment.customerId]);
+          await client.query("INSERT INTO customer_credit_movements (customer_id,amount_cents,movement_type,sale_id,payment_id,notes,created_by) VALUES ($1,$2,'SALE_USED',$3,$4,$5,$6)",[payment.customerId,-payment.amountCents,saleId,createdPayment.rows[0].id,`Crédito aplicado na manutenção da venda #${saleId}`,user.id]);
+        }
+      }
+
+      await client.query("UPDATE sales SET customer_id=$1 WHERE id=$2",[customerId,saleId]);
+      await client.query("UPDATE commands SET customer_name=$1 WHERE id=$2",[selectedCustomer?.name??null,sale.rows[0].command_id]);
+      await auditLog({userId:user.id,action:"SALE_MOVEMENT_UPDATED",entityType:"SALE",entityId:saleId,description:`Atualizou cliente e formas de pagamento da venda #${saleId}, comanda ${commandLabel(sale.rows[0])}, ${sale.rows[0].table_display}.`,metadata:{previousCustomerId:sale.rows[0].customer_id,customerId,previousPayments:currentPayments.rows.map((payment)=>({id:payment.id,method:payment.method,amountCents:payment.amount_cents,customerId:payment.customer_id,staffMemberId:payment.staff_member_id})),payments:paymentAllocations}},client);
+    });
+  }catch(error){return{error:error instanceof Error?error.message:"Não foi possível atualizar o movimento."};}
+  revalidatePath("/manutencao-movimento");
+  revalidatePath("/relatorios");
+  revalidatePath("/caixa");
+  revalidatePath("/painel");
+  revalidatePath("/pendencias");
+  revalidatePath("/clientes");
+  revalidatePath("/funcionarios");
+  return{success:true};
 }
 
 export async function closeCashAction(formData: FormData) {
@@ -180,7 +302,7 @@ export async function closeCashAction(formData: FormData) {
       if (!current.rows[0]) throw new Error("Caixa não encontrado ou já fechado.");
       const [sales, paymentRows] = await Promise.all([
         client.query<{ total:string }>("SELECT COALESCE(SUM(total_cents),0)::text AS total FROM sales WHERE cash_session_id=$1 AND status='COMPLETED'", [cashId]),
-        client.query<{ method:string; total:string }>(`SELECT p.method,COALESCE(SUM(p.amount_cents),0)::text AS total FROM payments p JOIN sales s ON s.id=p.sale_id WHERE s.cash_session_id=$1 AND s.status='COMPLETED' GROUP BY p.method`, [cashId]),
+        client.query<{ method:string; total:string }>(`SELECT p.method,COALESCE(SUM(p.amount_cents),0)::text AS total FROM payments p JOIN sales s ON s.id=p.sale_id WHERE s.cash_session_id=$1 AND s.status='COMPLETED' AND p.voided_at IS NULL GROUP BY p.method`, [cashId]),
       ]);
       const paymentTotals = Object.fromEntries(paymentRows.rows.map((row) => [row.method, Number(row.total)])) as Record<string,number>;
       const salesTotal = Number(sales.rows[0]?.total ?? 0);
@@ -410,18 +532,27 @@ export async function closeCommandAction(formData: FormData) {
           if(required>balance) throw new Error(`O crédito disponível de ${customer.name} é ${moneyText(balance)}.`);
         }
       }
+      const staffMemberIds=[...new Set(paymentAllocations.filter((payment)=>payment.method==="STAFF_VOUCHER").map((payment)=>payment.staffMemberId as number))].sort((a,b)=>a-b);
+      const staffMembersById=new Map<number,string>();
+      if(staffMemberIds.length>0){
+        const staffMembers=await client.query<{id:number;name:string}>("SELECT id,name FROM staff_members WHERE id=ANY($1::bigint[]) AND active=TRUE ORDER BY id FOR SHARE",[staffMemberIds]);
+        if(staffMembers.rows.length!==staffMemberIds.length) throw new Error("Um dos funcionários selecionados não está ativo ou não foi encontrado.");
+        for(const staffMember of staffMembers.rows) staffMembersById.set(Number(staffMember.id),staffMember.name);
+      }
       const cash = await client.query<{ id:number }>("SELECT id FROM cash_sessions WHERE status='OPEN' LIMIT 1 FOR UPDATE");
       if (!cash.rows[0]) throw new Error("Abra o caixa antes de finalizar a venda.");
-      const sale = await client.query<{ id:number }>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,split_count,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", [commandId, cash.rows[0].id, subtotal, discount, service, total, splitCount, user.id]);
+      const saleCustomerId=storeCreditTotals.size===1?[...storeCreditTotals.keys()][0]:null;
+      const sale = await client.query<{ id:number }>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,split_count,customer_id,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id", [commandId, cash.rows[0].id, subtotal, discount, service, total, splitCount, saleCustomerId, user.id]);
       for(const payment of paymentAllocations){
-        const createdPayment=await client.query<{id:number}>("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents,customer_id,staff_member_name,staff_voucher_status) VALUES ($1,$2,$3,NULL,0,$4,$5,$6) RETURNING id",[sale.rows[0].id,payment.method,payment.amountCents,payment.customerId??null,payment.staffMemberName??null,payment.method==="STAFF_VOUCHER"?"PENDING":null]);
+        const staffMemberName=payment.staffMemberId?staffMembersById.get(payment.staffMemberId)??null:null;
+        const createdPayment=await client.query<{id:number}>("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents,customer_id,staff_member_id,staff_member_name,staff_voucher_status) VALUES ($1,$2,$3,NULL,0,$4,$5,$6,$7) RETURNING id",[sale.rows[0].id,payment.method,payment.amountCents,payment.customerId??null,payment.staffMemberId??null,staffMemberName,payment.method==="STAFF_VOUCHER"?"PENDING":null]);
         if(payment.method==="STORE_CREDIT"&&payment.customerId){
           await client.query("UPDATE customers SET store_credit_balance_cents=store_credit_balance_cents-$1,updated_at=NOW() WHERE id=$2",[payment.amountCents,payment.customerId]);
           await client.query("INSERT INTO customer_credit_movements (customer_id,amount_cents,movement_type,sale_id,payment_id,notes,created_by) VALUES ($1,$2,'SALE_USED',$3,$4,$5,$6)",[payment.customerId,-payment.amountCents,sale.rows[0].id,createdPayment.rows[0].id,`Crédito usado na venda #${sale.rows[0].id}`,user.id]);
         }
       }
       await client.query("UPDATE commands SET status='CLOSED',closed_at=NOW() WHERE id=$1", [commandId]);
-      await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda ${commandLabel(command.rows[0])}, ${command.rows[0].display_label}, por ${moneyText(total)}.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, commandName:command.rows[0].command_name, table:command.rows[0].display_label, subtotal, discount, service, total, splitCount, payments:paymentAllocations.map(({method,amountCents,staffMemberName,customerId})=>({method,amountCents,staffMemberName,customerId})) } }, client);
+      await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda ${commandLabel(command.rows[0])}, ${command.rows[0].display_label}, por ${moneyText(total)}.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, commandName:command.rows[0].command_name, table:command.rows[0].display_label, subtotal, discount, service, total, splitCount, payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId})) } }, client);
       return sale.rows[0].id;
     });
   } catch (error) { return {error:error instanceof Error ? error.message : "Não foi possível fechar a comanda."}; }
@@ -628,27 +759,6 @@ export async function deleteProductAction(formData: FormData) {
   } catch(error){ fail("/produtos",error instanceof Error?error.message:"Não foi possível excluir o produto."); }
   revalidatePath("/produtos"); revalidatePath("/estoque"); revalidatePath("/comandas"); revalidatePath("/painel");
   redirect("/produtos");
-}
-
-export async function addDraftKegAction(formData: FormData) {
-  const user = await requirePermission("STOCK");
-  const stockKind=String(formData.get("stockKind")??"");
-  const kegCount=Math.trunc(numberValue(formData.get("kegCount"),1));
-  if(!["DRAFT_BEER","DRAFT_WINE"].includes(stockKind)||kegCount<1||kegCount>20) fail("/estoque","Informe de 1 a 20 galões.");
-  try{
-    await transaction(async(client)=>{
-      const pool=await client.query<{id:number;name:string;stock_quantity:number|string}>("SELECT id,name,stock_quantity FROM stock_pools WHERE stock_kind=$1 FOR UPDATE",[stockKind]);
-      if(!pool.rows[0]) throw new Error("Estoque de chopp não encontrado.");
-      const added=kegCount*50;
-      const newStock=Number(pool.rows[0].stock_quantity)+added;
-      await client.query("UPDATE stock_pools SET stock_quantity=$1,updated_at=NOW() WHERE id=$2",[newStock,pool.rows[0].id]);
-      const product=await client.query<{id:number}>("SELECT id FROM products WHERE stock_pool_id=$1 AND deleted_at IS NULL ORDER BY id LIMIT 1",[pool.rows[0].id]);
-      if(product.rows[0]) await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,user_id) VALUES ($1,$2,$3,'KEG_ADDED',$4)",[product.rows[0].id,pool.rows[0].id,added,user.id]);
-      await auditLog({userId:user.id,action:"DRAFT_KEG_ADDED",entityType:"STOCK_POOL",entityId:pool.rows[0].id,description:`Adicionou ${kegCount} galão(ões) de 50 L ao ${pool.rows[0].name}. Novo saldo: ${newStock} L.`,metadata:{stockKind,kegCount,addedLiters:added,previousStock:pool.rows[0].stock_quantity,newStock}},client);
-    });
-  }catch(error){fail("/estoque",error instanceof Error?error.message:"Não foi possível adicionar o galão.");}
-  revalidatePath("/estoque"); revalidatePath("/produtos"); revalidatePath("/comandas"); revalidatePath("/painel");
-  redirect("/estoque");
 }
 
 export async function adjustStockAction(formData: FormData) {
@@ -869,13 +979,13 @@ export async function cancelSaleAction(formData: FormData) {
         await client.query("UPDATE stock_pools SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [item.stock_quantity_used, item.stock_pool_id]);
         await client.query("INSERT INTO stock_movements (product_id,stock_pool_id,quantity,reason,order_item_id,user_id) VALUES ($1,$2,$3,'SALE_CANCELLED',$4,$5)", [item.product_id, item.stock_pool_id, item.stock_quantity_used, item.id, user.id]);
       }
-      const storeCredits=await client.query<{id:number;customer_id:number;amount_cents:number}>("SELECT id,customer_id,amount_cents FROM payments WHERE sale_id=$1 AND method='STORE_CREDIT' AND customer_id IS NOT NULL ORDER BY customer_id,id FOR UPDATE",[saleId]);
+      const storeCredits=await client.query<{id:number;customer_id:number;amount_cents:number}>("SELECT id,customer_id,amount_cents FROM payments WHERE sale_id=$1 AND method='STORE_CREDIT' AND customer_id IS NOT NULL AND voided_at IS NULL ORDER BY customer_id,id FOR UPDATE",[saleId]);
       for(const payment of storeCredits.rows){
         await client.query("SELECT id FROM customers WHERE id=$1 FOR UPDATE",[payment.customer_id]);
         await client.query("UPDATE customers SET store_credit_balance_cents=store_credit_balance_cents+$1,updated_at=NOW() WHERE id=$2",[payment.amount_cents,payment.customer_id]);
         await client.query("INSERT INTO customer_credit_movements (customer_id,amount_cents,movement_type,sale_id,payment_id,notes,created_by) VALUES ($1,$2,'SALE_REFUNDED',$3,$4,$5,$6)",[payment.customer_id,payment.amount_cents,saleId,payment.id,`Crédito devolvido pelo cancelamento da venda #${saleId}`,user.id]);
       }
-      await client.query("UPDATE payments SET staff_voucher_status='CANCELLED' WHERE sale_id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='PENDING'",[saleId]);
+      await client.query("UPDATE payments SET staff_voucher_status='CANCELLED' WHERE sale_id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='PENDING' AND voided_at IS NULL",[saleId]);
       await client.query("UPDATE sales SET status='CANCELLED',cancelled_by=$1,cancelled_at=NOW(),cancellation_reason=$2 WHERE id=$3", [user.id, reason, saleId]);
       await client.query("UPDATE commands SET status='CANCELLED' WHERE id=$1", [sale.rows[0].command_id]);
       await auditLog({ userId:user.id, action:"SALE_CANCELLED", entityType:"SALE", entityId:saleId, description:`Cancelou a venda #${saleId}, comanda ${commandLabel(sale.rows[0])}, ${sale.rows[0].display_label}, de ${moneyText(Number(sale.rows[0].total_cents))}. Motivo: ${reason}`, metadata:{ reason, commandId:sale.rows[0].command_id, commandNumber:sale.rows[0].command_number, commandName:sale.rows[0].command_name, table:sale.rows[0].display_label } }, client);

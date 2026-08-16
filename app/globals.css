@@ -330,6 +330,19 @@ tr:hover td { background:#fff3f4; }
 .sale-details-meta small { color:var(--muted); }
 .sale-details-bottom { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
 .sale-details-content > .btn { justify-self:start; }
+.movement-maintenance-dialog { width:min(1120px,96vw); }
+.movement-filter-form { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)) auto auto; align-items:end; gap:10px; }
+.movement-edit-section { display:grid; gap:14px; padding:16px; }
+.movement-edit-section .page-head { margin-bottom:0; }
+.movement-edit-section h4 { margin:0; }
+.movement-payment-list { display:grid; gap:10px; }
+.movement-payment-row { display:grid; grid-template-columns:110px minmax(170px,1fr) 140px minmax(190px,1fr) auto; align-items:end; gap:9px; border:1px solid var(--line); border-radius:12px; padding:12px; background:#fffafa; }
+.movement-payment-row > strong { align-self:center; }
+.movement-payment-row > .btn { margin-bottom:1px; }
+.movement-readonly { display:flex; align-items:center; color:var(--muted); background:#f4edef; }
+.product-management-search { display:grid; grid-template-columns:minmax(260px,1fr) auto auto auto; align-items:end; gap:10px; margin-bottom:16px; }
+.product-management-search .live-product-search { max-width:none; }
+.product-management-search .live-search-result-count { align-self:center; margin:0; white-space:nowrap; }
 .kitchen-item-card { border:1px solid var(--line); border-radius:12px; padding:14px; background:white; }
 .kitchen-item-card p { color:var(--muted); font-size:13px; }
 .event-form { max-width:760px; }
@@ -472,6 +485,8 @@ tr:hover td { background:#fff3f4; }
   .split-payment-row { grid-template-columns:1fr; }
   .sale-details-dialog { width:96vw; padding:15px; }
   .sale-details-meta,.sale-details-bottom { grid-template-columns:1fr; }
+  .movement-filter-form,.movement-payment-row,.product-management-search { grid-template-columns:1fr; }
+  .movement-payment-row > .btn { width:100%; }
   .split-calculator > div:last-child { border-left:0; border-top:1px solid var(--line); padding-left:0; padding-top:12px; }
   .span-2 { grid-column:auto; }
   .product-edit-image { align-items:flex-start; flex-direction:column; }
