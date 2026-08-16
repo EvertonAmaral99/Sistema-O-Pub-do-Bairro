@@ -11,9 +11,10 @@ type PaymentTotals = {
   debit: number;
   credit: number;
   staffVoucher: number;
+  storeCredit: number;
 };
 
-type ConfirmationKey = "closingAmount" | "confirmedPix" | "confirmedDebit" | "confirmedCredit" | "confirmedStaffVoucher";
+type ConfirmationKey = "closingAmount" | "confirmedPix" | "confirmedDebit" | "confirmedCredit" | "confirmedStaffVoucher" | "confirmedStoreCredit";
 
 function toCents(value: string) {
   if (!value.trim()) return null;
@@ -45,6 +46,7 @@ export function CashClosingForm({
     confirmedDebit: payments.debit === 0 ? "0.00" : "",
     confirmedCredit: payments.credit === 0 ? "0.00" : "",
     confirmedStaffVoucher: payments.staffVoucher === 0 ? "0.00" : "",
+    confirmedStoreCredit: payments.storeCredit === 0 ? "0.00" : "",
   });
 
   const fields: Array<{ key: ConfirmationKey; label: string; expected: number; help: string }> = [
@@ -58,6 +60,7 @@ export function CashClosingForm({
     { key: "confirmedDebit", label: "Débito conferido (R$)", expected: payments.debit, help: "Total registrado em débito" },
     { key: "confirmedCredit", label: "Crédito conferido (R$)", expected: payments.credit, help: "Total registrado em crédito" },
     { key: "confirmedStaffVoucher", label: "Vale conferido (R$)", expected: payments.staffVoucher, help: "Total registrado em vale" },
+    { key: "confirmedStoreCredit", label: "Crédito em loja conferido (R$)", expected: payments.storeCredit, help: "Total usado dos créditos de clientes" },
   ];
 
   const checks = fields.map((field) => ({ ...field, informed: toCents(values[field.key]), matches: toCents(values[field.key]) === field.expected }));

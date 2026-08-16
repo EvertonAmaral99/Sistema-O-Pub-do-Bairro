@@ -2,6 +2,7 @@ export type Role = "ADMIN" | "MANAGER" | "CASHIER" | "KITCHEN" | "WAITER" | "ATT
 export const permissionConfig = [
   { key: "DASHBOARD", label: "Visão geral", description: "Painel com resumo do movimento" },
   { key: "COMMANDS", label: "Comandas", description: "Abrir, lançar e fechar comandas" },
+  { key: "CUSTOMERS", label: "Clientes", description: "Cadastrar clientes e administrar créditos em loja" },
   { key: "KITCHEN", label: "Cozinha", description: "Visualizar e atualizar itens que precisam de preparo" },
   { key: "PRODUCTS", label: "Produtos", description: "Cadastrar produtos e preços" },
   { key: "STOCK", label: "Estoque", description: "Consultar e ajustar quantidades" },
@@ -16,7 +17,7 @@ export const permissionKeys = permissionConfig.map((item) => item.key) as Permis
 export const defaultPermissionsByRole: Record<Role, Permission[]> = {
   ADMIN: [...permissionKeys],
   MANAGER: [...permissionKeys],
-  CASHIER: ["DASHBOARD", "COMMANDS"],
+  CASHIER: ["DASHBOARD", "COMMANDS", "CUSTOMERS"],
   KITCHEN: ["DASHBOARD", "KITCHEN"],
   WAITER: ["DASHBOARD", "COMMANDS"],
   ATTENDANT: ["DASHBOARD", "COMMANDS"],
@@ -44,7 +45,7 @@ export function hasPermission(user: SessionUser, permission: Permission) {
 
 export function firstAllowedPath(user: SessionUser) {
   const routes: Array<[Permission, string]> = [
-    ["DASHBOARD", "/painel"], ["COMMANDS", "/comandas"], ["KITCHEN", "/cozinha"],
+    ["DASHBOARD", "/painel"], ["COMMANDS", "/comandas"], ["CUSTOMERS", "/clientes"], ["KITCHEN", "/cozinha"],
     ["PRODUCTS", "/produtos"], ["STOCK", "/estoque"], ["CASH", "/caixa"], ["FINANCE", "/financeiro"], ["REPORTS", "/relatorios"],
   ];
   return routes.find(([permission]) => hasPermission(user, permission))?.[1] ?? "/configuracoes";

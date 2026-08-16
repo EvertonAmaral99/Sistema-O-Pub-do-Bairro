@@ -302,6 +302,12 @@ tr:hover td { background:#fff3f4; }
 .split-payment-row { display:grid; grid-template-columns:100px minmax(180px,1fr) minmax(150px,.6fr); align-items:end; gap:12px; border:1px solid #e2b9bd; border-radius:13px; padding:12px; background:#fff6f7; }
 .split-payment-row > strong { align-self:center; color:var(--red-dark); }
 .split-payment-help { color:var(--muted); line-height:1.4; }
+.store-credit-lookup { display:grid; gap:10px; }
+.store-credit-lookup > .btn { justify-self:start; }
+.store-credit-lookup-form { display:grid; grid-template-columns:minmax(230px,1fr) auto; align-items:end; gap:10px; border:1px solid #9ab8d4; border-radius:13px; padding:13px; background:#f2f8fd; }
+.store-credit-lookup-form > span { grid-column:1/-1; display:flex; align-items:center; gap:5px; font-size:13px; }
+.credit-lookup-success { color:#236145; }
+.credit-lookup-error { color:var(--red); }
 .split-calculator { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:end; border:1px solid var(--line); border-radius:12px; padding:14px; background:#fff; }
 .split-calculator label { display:flex; align-items:center; gap:6px; }
 .split-calculator > div:last-child { display:grid; gap:3px; border-left:1px solid var(--line); padding-left:14px; }
@@ -309,6 +315,21 @@ tr:hover td { background:#fff3f4; }
 .split-calculator small { color:var(--muted); }
 .cancel-command summary { color:var(--red); font-size:13px; font-weight:800; cursor:pointer; }
 .cancel-command form { margin-top:12px; }
+.customer-credit-form { display:grid; grid-template-columns:120px minmax(180px,1fr) auto; align-items:end; gap:8px; min-width:470px; }
+.pending-total { min-width:210px; padding:13px 16px; }
+.pending-settlement-form { display:grid; grid-template-columns:minmax(190px,1fr) minmax(180px,1fr) auto; align-items:center; gap:8px; min-width:570px; }
+.report-payment-summary { margin-top:22px; }
+.sale-number-button { border:0; padding:0; background:transparent; color:var(--red); font:inherit; font-weight:900; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+.sale-details-dialog { width:min(980px,94vw); max-height:90vh; overflow:auto; border:0; border-radius:18px; padding:22px; color:var(--ink); box-shadow:0 28px 80px rgba(45,8,13,.32); }
+.sale-details-dialog::backdrop { background:rgba(24,7,10,.68); }
+.sale-details-head { display:flex; justify-content:space-between; align-items:flex-start; gap:15px; padding-bottom:14px; border-bottom:1px solid var(--line); }
+.sale-details-head h3,.sale-details-head p { margin:2px 0 0; }
+.sale-details-content { display:grid; gap:20px; margin-top:18px; }
+.sale-details-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:9px; }
+.sale-details-meta span { display:grid; gap:3px; border-radius:10px; padding:10px; background:#f7edef; }
+.sale-details-meta small { color:var(--muted); }
+.sale-details-bottom { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+.sale-details-content > .btn { justify-self:start; }
 .kitchen-item-card { border:1px solid var(--line); border-radius:12px; padding:14px; background:white; }
 .kitchen-item-card p { color:var(--muted); font-size:13px; }
 .event-form { max-width:760px; }
@@ -445,9 +466,12 @@ tr:hover td { background:#fff3f4; }
   .danger-zone { align-items:stretch; flex-direction:column; }
   .danger-zone form,.danger-zone .btn { width:100%; }
   .permission-grid { grid-template-columns:1fr; }
-  .log-filters,.split-calculator { grid-template-columns:1fr; }
+  .log-filters,.split-calculator,.store-credit-lookup-form { grid-template-columns:1fr; }
+  .store-credit-lookup-form > span { grid-column:auto; }
   .payment-balance-details { grid-template-columns:1fr; }
   .split-payment-row { grid-template-columns:1fr; }
+  .sale-details-dialog { width:96vw; padding:15px; }
+  .sale-details-meta,.sale-details-bottom { grid-template-columns:1fr; }
   .split-calculator > div:last-child { border-left:0; border-top:1px solid var(--line); padding-left:0; padding-top:12px; }
   .span-2 { grid-column:auto; }
   .product-edit-image { align-items:flex-start; flex-direction:column; }
