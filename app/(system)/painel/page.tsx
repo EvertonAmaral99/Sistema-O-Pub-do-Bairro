@@ -16,7 +16,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const [stats, commands] = await Promise.all([
     query<{ open_commands: string; predicted_total: string; low_stock: string; prep_items: string }>(`SELECT
       (SELECT COUNT(*) FROM commands WHERE status='OPEN')::text AS open_commands,
-      ((SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE status='COMPLETED' AND created_at >= date_trunc('day',NOW())) +
+      ((SELECT COALESCE(SUM(total_cents),0) FROM sales WHERE status='COMPLETED' AND created_at >= (date_trunc('day',NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')) +
        (SELECT COALESCE(SUM(oi.unit_price_cents*oi.quantity),0) FROM order_items oi JOIN commands c ON c.id=oi.command_id WHERE c.status='OPEN' AND oi.status<>'CANCELLED'))::text AS predicted_total,
       (SELECT COUNT(*) FROM stock_pools sp WHERE sp.unlimited=FALSE AND sp.stock_quantity<=sp.min_stock AND EXISTS(SELECT 1 FROM products p WHERE p.stock_pool_id=sp.id AND p.active=TRUE AND p.deleted_at IS NULL))::text AS low_stock,
       (SELECT COUNT(*) FROM order_items WHERE destination='KITCHEN' AND status IN ('SENT','PREPARING','READY'))::text AS prep_items`),

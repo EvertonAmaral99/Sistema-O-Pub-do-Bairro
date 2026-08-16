@@ -10,7 +10,11 @@ type FinanceProduct = {
   stock_quantity:number|string; stock_per_sale_unit:number|string; sale_unit:string; stock_kind:string|null; unlimited:boolean; active:boolean;
 };
 
-const periods={hoje:{label:"Hoje",filter:"AND s.created_at>=date_trunc('day',NOW())"},mes:{label:"Este mês",filter:"AND s.created_at>=date_trunc('month',NOW())"},tudo:{label:"Todo o período",filter:""}} as const;
+const periods={
+  hoje:{label:"Hoje",filter:"AND s.created_at >= (date_trunc('day',NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"},
+  mes:{label:"Este mês",filter:"AND s.created_at >= (date_trunc('month',NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"},
+  tudo:{label:"Todo o período",filter:""},
+} as const;
 
 export default async function FinancePage({searchParams}:{searchParams:Promise<{periodo?:string;erro?:string;sucesso?:string}>}){
   await requirePermission("FINANCE");
