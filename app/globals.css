@@ -22,7 +22,11 @@ a { color:inherit; text-decoration:none; }
 .eyebrow { color:var(--amber-dark); font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.14em; }
 
 .app-shell { min-height:100vh; display:grid; grid-template-columns:244px 1fr; }
-.sidebar { position:sticky; top:0; height:100vh; background:linear-gradient(180deg,#230d10 0%,#12090a 100%); color:#fff5f5; padding:24px 18px; display:flex; flex-direction:column; gap:26px; }
+.sidebar { position:sticky; top:0; height:100vh; height:100dvh; min-height:0; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; scrollbar-width:thin; scrollbar-color:#8b3038 #190b0d; background:linear-gradient(180deg,#230d10 0%,#12090a 100%); color:#fff5f5; padding:24px 18px; display:flex; flex-direction:column; gap:26px; }
+.sidebar::-webkit-scrollbar { width:8px; }
+.sidebar::-webkit-scrollbar-track { background:#190b0d; }
+.sidebar::-webkit-scrollbar-thumb { border:2px solid #190b0d; border-radius:999px; background:#8b3038; }
+.sidebar::-webkit-scrollbar-thumb:hover { background:var(--amber); }
 .sidebar-mobile-head { display:block; }
 .mobile-menu-trigger,.sidebar-close,.sidebar-backdrop { display:none; }
 .sidebar .brand-mark { padding:0 8px; justify-content:center; }
