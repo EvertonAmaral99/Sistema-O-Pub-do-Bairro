@@ -62,11 +62,16 @@ function paymentAllocationsValue(formData:FormData):SalePaymentAllocation[]{
   });
 }
 type QuickSaleItemInput={productId:number;quantity:number};
-function quickSaleItemsValue(formData:FormData):QuickSaleItemInput[]{
-  const raw=String(formData.get("quickSaleItems")??"").trim();
+function quickSaleItemsFromRaw(rawValue:string,allowEmpty=false):QuickSaleItemInput[]{
+  const raw=rawValue.trim();
+  if(!raw){
+    if(allowEmpty)return[];
+    throw new Error("Adicione ao menos um produto à venda rápida.");
+  }
   let parsed:unknown;
   try{parsed=JSON.parse(raw);}catch{throw new Error("Os itens da venda rápida estão inválidos.");}
-  if(!Array.isArray(parsed)||parsed.length<1||parsed.length>200) throw new Error("Adicione ao menos um produto à venda rápida.");
+  if(!Array.isArray(parsed)||parsed.length>200||(!allowEmpty&&parsed.length<1)) throw new Error("Adicione ao menos um produto à venda rápida.");
+  if(parsed.length===0)return[];
   const quantities=new Map<number,number>();
   for(const entry of parsed){
     if(!entry||typeof entry!=="object") throw new Error("Um dos itens da venda rápida está inválido.");
@@ -80,6 +85,31 @@ function quickSaleItemsValue(formData:FormData):QuickSaleItemInput[]{
   }
   if(quantities.size>100) throw new Error("A venda rápida permite até 100 produtos diferentes.");
   return[...quantities].map(([productId,quantity])=>({productId,quantity})).sort((a,b)=>a.productId-b.productId);
+}
+function quickSaleItemsValue(formData:FormData):QuickSaleItemInput[]{
+  return quickSaleItemsFromRaw(String(formData.get("quickSaleItems")??""));
+}
+
+export async function saveQuickSaleDraftAction(formData:FormData):Promise<{success?:boolean;error?:string}>{
+  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  let items:QuickSaleItemInput[]=[];
+  try{
+    items=quickSaleItemsFromRaw(String(formData.get("quickSaleItems")??"[]"),true);
+  }catch(error){return{error:error instanceof Error?error.message:"Não foi possível salvar o rascunho da venda rápida."};}
+  try{
+    await transaction(async(client)=>{
+      if(items.length===0){
+        await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
+        return;
+      }
+      const productIds=items.map((item)=>item.productId);
+      const products=await client.query<{id:number}>("SELECT id FROM products WHERE id=ANY($1::bigint[]) AND active=TRUE AND deleted_at IS NULL AND name NOT ILIKE '%ESTOQUE%'",[productIds]);
+      if(products.rows.length!==productIds.length) throw new Error("Um dos produtos do rascunho não está mais disponível.");
+      await client.query(`INSERT INTO quick_sale_drafts (user_id,items,updated_at) VALUES ($1,$2::jsonb,NOW())
+        ON CONFLICT (user_id) DO UPDATE SET items=EXCLUDED.items,updated_at=NOW()`,[user.id,JSON.stringify(items)]);
+    });
+    return{success:true};
+  }catch(error){return{error:error instanceof Error?error.message:"Não foi possível sincronizar o rascunho da venda rápida."};}
 }
 function stockPerSaleUnitValue(value: FormDataEntryValue | null, name: string, saleUnit: string) {
   const raw = String(value ?? "").trim();
@@ -757,6 +787,7 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
         }
       }
       await auditLog({userId:user.id,action:"QUICK_SALE_COMPLETED",entityType:"SALE",entityId:sale.rows[0].id,description:`Finalizou a venda rápida #${sale.rows[0].id} por ${moneyText(total)}.`,metadata:{commandId,customerId:saleCustomerId,customerCreated,subtotal,discount,service,total,splitCount,kitchenItems:kitchenItemIds.length,items:products.rows.map((product)=>({productId:Number(product.id),productName:product.name,quantity:quantitiesByProduct.get(Number(product.id))||0})),payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId}))}},client);
+      await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
       return Number(sale.rows[0].id);
     });
   }catch(error){return{error:error instanceof Error?error.message:"Não foi possível concluir a venda rápida."};}
