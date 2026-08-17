@@ -7,6 +7,7 @@ import { hashPassword, requirePermission, requireRole, requireUser, verifyPasswo
 import { transaction } from "@/lib/db";
 import { canManageCommand, defaultPermissionsByRole, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
 import { commandLabel, saleReferenceLabel } from "@/lib/command-label";
+import { normalizeQuickSaleCheckoutDraft, quickSalePendingLabel } from "@/lib/quick-sale-draft";
 
 type CommandAuditRecord = { command_number:number|null; command_name:string|null; display_label:string };
 
@@ -90,26 +91,59 @@ function quickSaleItemsValue(formData:FormData):QuickSaleItemInput[]{
   return quickSaleItemsFromRaw(String(formData.get("quickSaleItems")??""));
 }
 
-export async function saveQuickSaleDraftAction(formData:FormData):Promise<{success?:boolean;error?:string}>{
+export async function saveQuickSaleDraftAction(formData:FormData):Promise<{success?:boolean;draftId?:number|null;error?:string}>{
   const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
   let items:QuickSaleItemInput[]=[];
+  let checkoutState=normalizeQuickSaleCheckoutDraft(null);
+  const draftIdRaw=String(formData.get("quickSaleDraftId")??"").trim();
+  const requestedDraftId=draftIdRaw?Math.trunc(Number(draftIdRaw)):null;
+  if(requestedDraftId!==null&&(!Number.isSafeInteger(requestedDraftId)||requestedDraftId<1)) return{error:"A pendência de venda informada é inválida."};
   try{
     items=quickSaleItemsFromRaw(String(formData.get("quickSaleItems")??"[]"),true);
+    const checkoutRaw=String(formData.get("quickSaleCheckout")??"{}");
+    if(checkoutRaw.length>40000) throw new Error("Os dados do rascunho ultrapassam o limite permitido.");
+    checkoutState=normalizeQuickSaleCheckoutDraft(JSON.parse(checkoutRaw));
   }catch(error){return{error:error instanceof Error?error.message:"Não foi possível salvar o rascunho da venda rápida."};}
   try{
-    await transaction(async(client)=>{
+    const draftId=await transaction(async(client)=>{
       if(items.length===0){
+        if(requestedDraftId!==null) await client.query("DELETE FROM quick_sale_pending_orders WHERE id=$1",[requestedDraftId]);
         await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
-        return;
+        return null;
       }
       const productIds=items.map((item)=>item.productId);
       const products=await client.query<{id:number}>("SELECT id FROM products WHERE id=ANY($1::bigint[]) AND active=TRUE AND deleted_at IS NULL AND name NOT ILIKE '%ESTOQUE%'",[productIds]);
       if(products.rows.length!==productIds.length) throw new Error("Um dos produtos do rascunho não está mais disponível.");
-      await client.query(`INSERT INTO quick_sale_drafts (user_id,items,updated_at) VALUES ($1,$2::jsonb,NOW())
-        ON CONFLICT (user_id) DO UPDATE SET items=EXCLUDED.items,updated_at=NOW()`,[user.id,JSON.stringify(items)]);
+      if(requestedDraftId!==null){
+        const updated=await client.query<{id:number}>("UPDATE quick_sale_pending_orders SET items=$1::jsonb,checkout_state=$2::jsonb,updated_by=$3,updated_at=NOW(),legacy_user_id=NULL WHERE id=$4 RETURNING id",[JSON.stringify(items),JSON.stringify(checkoutState),user.id,requestedDraftId]);
+        if(updated.rows[0]){
+          await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
+          return Number(updated.rows[0].id);
+        }
+        throw new Error("Essa pendência de venda não existe mais. Abra uma nova venda rápida.");
+      }
+      const created=await client.query<{id:number}>("INSERT INTO quick_sale_pending_orders (items,checkout_state,created_by,updated_by) VALUES ($1::jsonb,$2::jsonb,$3,$3) RETURNING id",[JSON.stringify(items),JSON.stringify(checkoutState),user.id]);
+      await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
+      return Number(created.rows[0].id);
     });
-    return{success:true};
+    return{success:true,draftId};
   }catch(error){return{error:error instanceof Error?error.message:"Não foi possível sincronizar o rascunho da venda rápida."};}
+}
+
+export async function discardQuickSalePendingAction(formData:FormData){
+  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const draftId=positiveId(formData.get("quickSaleDraftId"));
+  try{
+    await transaction(async(client)=>{
+      const draft=await client.query<{id:number}>("SELECT id FROM quick_sale_pending_orders WHERE id=$1 FOR UPDATE",[draftId]);
+      if(!draft.rows[0]) throw new Error("Essa pendência de venda não existe mais.");
+      await client.query("DELETE FROM quick_sale_pending_orders WHERE id=$1",[draftId]);
+      await auditLog({userId:user.id,action:"QUICK_SALE_PENDING_DISCARDED",entityType:"QUICK_SALE_PENDING",entityId:draftId,description:`Descartou a pendência de venda ${quickSalePendingLabel(draftId)}.`},client);
+    });
+  }catch(error){fail("/pendencias-venda",error instanceof Error?error.message:"Não foi possível descartar a pendência de venda.");}
+  revalidatePath("/pendencias-venda");
+  revalidatePath("/venda-rapida");
+  redirect("/pendencias-venda?sucesso=1");
 }
 function stockPerSaleUnitValue(value: FormDataEntryValue | null, name: string, saleUnit: string) {
   const raw = String(value ?? "").trim();
@@ -651,6 +685,9 @@ export async function closeCommandAction(formData: FormData) {
 export async function quickSaleAction(formData:FormData):Promise<{url?:string;error?:string}>{
   const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
   const format=String(formData.get("format")??"80");
+  const quickSaleDraftIdRaw=String(formData.get("quickSaleDraftId")??"").trim();
+  const quickSaleDraftId=quickSaleDraftIdRaw?Math.trunc(Number(quickSaleDraftIdRaw)):null;
+  if(quickSaleDraftId!==null&&(!Number.isSafeInteger(quickSaleDraftId)||quickSaleDraftId<1)) return{error:"A pendência de venda informada é inválida."};
   let items:QuickSaleItemInput[]=[];
   let paymentAllocations:SalePaymentAllocation[]=[];
   try{
@@ -673,6 +710,10 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
   let saleId=0;
   try{
     saleId=await transaction(async(client)=>{
+      if(quickSaleDraftId!==null){
+        const pendingDraft=await client.query<{id:number}>("SELECT id FROM quick_sale_pending_orders WHERE id=$1 FOR UPDATE",[quickSaleDraftId]);
+        if(!pendingDraft.rows[0]) throw new Error("Essa pendência de venda não existe mais ou já foi finalizada.");
+      }
       let saleCustomerId=requestedCustomerId;
       let saleCustomerName:string|null=null;
       let customerCreated=false;
@@ -787,12 +828,14 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
         }
       }
       await auditLog({userId:user.id,action:"QUICK_SALE_COMPLETED",entityType:"SALE",entityId:sale.rows[0].id,description:`Finalizou a venda rápida #${sale.rows[0].id} por ${moneyText(total)}.`,metadata:{commandId,customerId:saleCustomerId,customerCreated,subtotal,discount,service,total,splitCount,kitchenItems:kitchenItemIds.length,items:products.rows.map((product)=>({productId:Number(product.id),productName:product.name,quantity:quantitiesByProduct.get(Number(product.id))||0})),payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId}))}},client);
+      if(quickSaleDraftId!==null) await client.query("DELETE FROM quick_sale_pending_orders WHERE id=$1",[quickSaleDraftId]);
       await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
       return Number(sale.rows[0].id);
     });
   }catch(error){return{error:error instanceof Error?error.message:"Não foi possível concluir a venda rápida."};}
 
   revalidatePath("/venda-rapida");
+  revalidatePath("/pendencias-venda");
   revalidatePath("/caixa");
   revalidatePath("/painel");
   revalidatePath("/estoque");
