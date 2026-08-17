@@ -5,8 +5,8 @@ import { formatDateTime, formatMoney } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
 import { hasPermission, isManagementRole } from "@/lib/roles";
 import { DashboardCommandCard } from "@/components/dashboard-command-card";
+import { CommandCardIdentifier } from "@/components/command-card-identifier";
 import { PriorityInfo } from "@/components/priority-info";
-import { commandLabel } from "@/lib/command-label";
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
   const user = await requirePermission("DASHBOARD");
@@ -40,7 +40,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Comandas em andamento</h3><p>Últimas comandas abertas.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-light btn-small">Ver todas</Link>}</div>
         {commands.rows.length === 0 ? <div className="empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
           {commands.rows.map((command) => canUseCommands ? <DashboardCommandCard command={command} canViewFinance={canViewFinance} key={command.id}/> : <div className={`command-card ${command.priority?"priority-alert":""}`} key={command.id}>
-            <div className="command-top"><span className="command-number">{commandLabel(command)}</span><span className="badge badge-amber">{command.table_display}</span></div>
+            <div className="command-top"><CommandCardIdentifier commandNumber={command.command_number} commandName={command.command_name}/><span className="badge badge-amber">{command.table_display}</span></div>
             {command.priority&&<div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
             <p>{command.customer_name || "Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p>{canViewFinance && <strong className="money">{formatMoney(command.total)}</strong>}
           </div>)}

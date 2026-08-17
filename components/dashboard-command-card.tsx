@@ -6,6 +6,7 @@ import { AlertTriangle, Trash2, X } from "lucide-react";
 import { updateCommandPriorityAction } from "@/app/system-actions";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { PriorityInfo } from "@/components/priority-info";
+import { CommandCardIdentifier } from "@/components/command-card-identifier";
 import { commandLabel } from "@/lib/command-label";
 
 type Command = {
@@ -27,7 +28,7 @@ export function DashboardCommandCard({ command, canViewFinance }: { command:Comm
   return <article className={`command-card dashboard-command-card ${command.priority?"priority-alert":""}`}>
     <button className={`dashboard-priority-shortcut ${command.priority?"active":""}`} type="button" onClick={()=>dialogRef.current?.showModal()} title={command.priority?"Alterar prioridade":"Marcar como prioridade"} aria-label={command.priority?`Alterar prioridade da comanda ${identifier}`:`Marcar comanda ${identifier} como prioridade`}><AlertTriangle size={17}/></button>
     <Link className="dashboard-command-link" href={`/comandas/${command.id}`}>
-      <div className="command-top"><span className="command-number">{identifier}</span><span className="badge badge-amber">{command.table_display}</span></div>
+      <div className="command-top"><CommandCardIdentifier commandNumber={command.command_number} commandName={command.command_name}/><span className="badge badge-amber">{command.table_display}</span></div>
       {command.priority&&<div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
       <p>{command.customer_name||"Cliente não informado"}<br/>{formatDateTime(command.opened_at)}</p>{canViewFinance&&<strong className="money">{formatMoney(command.total)}</strong>}
     </Link>
