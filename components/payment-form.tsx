@@ -52,7 +52,7 @@ export function PaymentForm({commandId,subtotal,staffMembers,customers}:{command
     return customers.filter((customer)=>searchText(customer.name).includes(normalized)||(cpfDigits.length>0&&customer.cpf.includes(cpfDigits))).slice(0,6);
   },[customerSearch,customers]);
   const customerCredit=selectedCustomer;
-  const availableBasePaymentMethods=useMemo(()=>staffMembers.length>0?basePaymentMethods:basePaymentMethods.filter((method)=>method.value!=="STAFF_VOUCHER"),[staffMembers]);
+  const availableBasePaymentMethods=basePaymentMethods;
   const paymentMethods=useMemo(()=>customerCredit&&customerCredit.balanceCents>0?[...availableBasePaymentMethods,{value:"STORE_CREDIT" as const,label:`Crédito em loja — ${brl(customerCredit.balanceCents)}`}]:availableBasePaymentMethods,[availableBasePaymentMethods,customerCredit]);
   const calculation=useMemo(()=>{
     const discountCents=Math.min(toCents(discount),subtotal);
