@@ -1,16 +1,37 @@
-import { notFound } from "next/navigation";
+import { notFound,redirect } from "next/navigation";
 import { PrintActions } from "@/components/print-actions";
 import { BrandLogo } from "@/components/brand-logo";
-import { requirePermission } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { commandLabel } from "@/lib/command-label";
+import { firstAllowedPath,hasPermission } from "@/lib/roles";
 
-export const dynamic = "force-dynamic";
-export default async function SalePrintPage({ params,searchParams }:{params:Promise<{id:string}>;searchParams:Promise<{formato?:string}>}){
-  await requirePermission("COMMANDS"); const saleId=Number((await params).id); const format=(await searchParams).formato||"80";
-  const sale=await query<{id:number;command_id:number;command_number:number|null;command_name:string|null;table_display:string;customer_name:string|null;subtotal_cents:number;discount_cents:number;service_fee_cents:number;total_cents:number;split_count:number;created_at:string;user_name:string}>(`SELECT s.id,c.id AS command_id,c.command_number,c.command_name,cl.display_label AS table_display,c.customer_name,s.subtotal_cents,s.discount_cents,s.service_fee_cents,s.total_cents,s.split_count,s.created_at,u.name AS user_name FROM sales s JOIN commands c ON c.id=s.command_id JOIN command_locations cl ON cl.command_id=c.id JOIN users u ON u.id=s.created_by WHERE s.id=$1`,[saleId]); if(!sale.rows[0])notFound(); const data=sale.rows[0];
-  const [items,payments]=await Promise.all([query<{product_name:string;quantity:number|string;unit_price_cents:number;display_unit:string}>("SELECT product_name,quantity,unit_price_cents,display_unit FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' ORDER BY id",[data.command_id]),query<{method:string;amount_cents:number;staff_member_name:string|null;customer_name:string|null}>("SELECT p.method,p.amount_cents,COALESCE(sm.name,p.staff_member_name) AS staff_member_name,c.name AS customer_name FROM payments p LEFT JOIN customers c ON c.id=p.customer_id LEFT JOIN staff_members sm ON sm.id=p.staff_member_id WHERE p.sale_id=$1 AND p.voided_at IS NULL ORDER BY p.id",[saleId])]); const methods:Record<string,string>={CASH:"Dinheiro",PIX:"Pix",DEBIT:"Cartão de débito",CREDIT:"Cartão de crédito",STAFF_VOUCHER:"Vale funcionário",STORE_CREDIT:"Crédito em loja"};
-  return <main className={`print-page ${format==="80"?"receipt-80":format==="58"?"receipt-58":""}`}><PrintActions backHref="/painel"/><header className="print-title"><BrandLogo className="print-logo"/><h1>O Pub do Bairro</h1><strong>COMPROVANTE DA VENDA</strong></header><p style={{textAlign:"center"}}>Venda #{data.id} · {formatDateTime(data.created_at)}</p><div className="divider"/><p><strong>Comanda:</strong> {commandLabel(data)}<br/><strong>Mesa(s):</strong> {data.table_display}<br/><strong>Cliente:</strong> {data.customer_name||"Não informado"}<br/><strong>Atendente:</strong> {data.user_name}</p><div className="divider"/>
-    {items.rows.map((item,index)=><div key={index} style={{marginBottom:9}}><div className="total-row"><span>{formatQuantity(item.quantity,item.display_unit)} · {item.product_name}</span><strong>{formatMoney(Number(item.quantity)*item.unit_price_cents)}</strong></div><small>{formatMoney(item.unit_price_cents)} por unidade</small></div>)}<div className="divider"/><div className="totals"><div className="total-row"><span>Subtotal</span><span>{formatMoney(data.subtotal_cents)}</span></div>{data.discount_cents>0&&<div className="total-row"><span>Desconto</span><span>- {formatMoney(data.discount_cents)}</span></div>}{data.service_fee_cents>0&&<div className="total-row"><span>Taxa de serviço</span><span>{formatMoney(data.service_fee_cents)}</span></div>}<div className="total-row grand"><span>Total</span><span>{formatMoney(data.total_cents)}</span></div>{data.split_count>1&&<div className="total-row"><span>Dividido entre {data.split_count} pessoas</span><strong>{formatMoney(Math.round(data.total_cents/data.split_count))} por pessoa</strong></div>}</div><div className="divider"/><strong>Pagamento</strong>{payments.rows.map((p,index)=><div className="total-row" key={index} style={{marginTop:7}}><span>{methods[p.method]}{p.staff_member_name&&<small> · {p.staff_member_name}</small>}{p.customer_name&&<small> · {p.customer_name}</small>}</span><span>{formatMoney(p.amount_cents)}</span></div>)}<div className="divider"/><p style={{textAlign:"center"}}>Obrigado pela preferência!</p></main>;
+export const dynamic="force-dynamic";
+
+export default async function SalePrintPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{formato?:string}>}){
+  const user=await requireUser();
+  const saleId=Number((await params).id);
+  const format=(await searchParams).formato||"80";
+  const sale=await query<{id:number;command_id:number;command_number:number|null;command_name:string|null;sale_channel:string;table_display:string;customer_name:string|null;subtotal_cents:number;discount_cents:number;service_fee_cents:number;total_cents:number;split_count:number;created_at:string;user_name:string}>(`SELECT s.id,c.id AS command_id,c.command_number,c.command_name,c.sale_channel,cl.display_label AS table_display,COALESCE(customer.name,c.customer_name) AS customer_name,s.subtotal_cents,s.discount_cents,s.service_fee_cents,s.total_cents,s.split_count,s.created_at,u.name AS user_name
+    FROM sales s JOIN commands c ON c.id=s.command_id JOIN command_locations cl ON cl.command_id=c.id JOIN users u ON u.id=s.created_by LEFT JOIN customers customer ON customer.id=s.customer_id WHERE s.id=$1`,[saleId]);
+  if(!sale.rows[0])notFound();
+  const data=sale.rows[0];
+  const canPrint=data.sale_channel==="QUICK_SALE"?["ADMIN","MANAGER","CASHIER"].includes(user.role):hasPermission(user,"COMMANDS");
+  if(!canPrint)redirect(`${firstAllowedPath(user)}?erro=permissao`);
+  const [items,payments]=await Promise.all([
+    query<{product_name:string;quantity:number|string;unit_price_cents:number;display_unit:string}>("SELECT product_name,quantity,unit_price_cents,display_unit FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' ORDER BY id",[data.command_id]),
+    query<{method:string;amount_cents:number;staff_member_name:string|null;customer_name:string|null}>("SELECT p.method,p.amount_cents,COALESCE(sm.name,p.staff_member_name) AS staff_member_name,c.name AS customer_name FROM payments p LEFT JOIN customers c ON c.id=p.customer_id LEFT JOIN staff_members sm ON sm.id=p.staff_member_id WHERE p.sale_id=$1 AND p.voided_at IS NULL ORDER BY p.id",[saleId]),
+  ]);
+  const methods:Record<string,string>={CASH:"Dinheiro",PIX:"Pix",DEBIT:"Cartão de débito",CREDIT:"Cartão de crédito",STAFF_VOUCHER:"Vale funcionário",STORE_CREDIT:"Crédito em loja"};
+  const quickSale=data.sale_channel==="QUICK_SALE";
+  return <main className={`print-page ${format==="80"?"receipt-80":format==="58"?"receipt-58":""}`}>
+    <PrintActions backHref={quickSale?"/venda-rapida":"/painel"}/>
+    <header className="print-title"><BrandLogo className="print-logo"/><h1>O Pub do Bairro</h1><strong>COMPROVANTE DA VENDA</strong></header>
+    <p style={{textAlign:"center"}}>Venda #{data.id} · {formatDateTime(data.created_at)}</p><div className="divider"/>
+    <p>{quickSale?<><strong>Tipo:</strong> Venda rápida<br/></>:<><strong>Comanda:</strong> {commandLabel(data)}<br/><strong>Mesa(s):</strong> {data.table_display}<br/></>}<strong>Cliente:</strong> {data.customer_name||"Não informado"}<br/><strong>Atendente:</strong> {data.user_name}</p><div className="divider"/>
+    {items.rows.map((item,index)=><div key={index} style={{marginBottom:9}}><div className="total-row"><span>{formatQuantity(item.quantity,item.display_unit)} · {item.product_name}</span><strong>{formatMoney(Number(item.quantity)*item.unit_price_cents)}</strong></div><small>{formatMoney(item.unit_price_cents)} por unidade</small></div>)}
+    <div className="divider"/><div className="totals"><div className="total-row"><span>Subtotal</span><span>{formatMoney(data.subtotal_cents)}</span></div>{data.discount_cents>0&&<div className="total-row"><span>Desconto</span><span>- {formatMoney(data.discount_cents)}</span></div>}{data.service_fee_cents>0&&<div className="total-row"><span>Taxa de serviço</span><span>{formatMoney(data.service_fee_cents)}</span></div>}<div className="total-row grand"><span>Total</span><span>{formatMoney(data.total_cents)}</span></div>{data.split_count>1&&<div className="total-row"><span>Dividido entre {data.split_count} pessoas</span><strong>{formatMoney(Math.round(data.total_cents/data.split_count))} por pessoa</strong></div>}</div>
+    <div className="divider"/><strong>Pagamento</strong>{payments.rows.map((payment,index)=><div className="total-row" key={index} style={{marginTop:7}}><span>{methods[payment.method]}{payment.staff_member_name&&<small> · {payment.staff_member_name}</small>}{payment.customer_name&&<small> · {payment.customer_name}</small>}</span><span>{formatMoney(payment.amount_cents)}</span></div>)}<div className="divider"/><p style={{textAlign:"center"}}>Obrigado pela preferência!</p>
+  </main>;
 }

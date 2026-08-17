@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CircleCheck, CircleDollarSign, CirclePlus, CreditCard, Printer, Search, Trash2, UserPlus, Users, X } from "lucide-react";
-import { closeCommandAction } from "@/app/system-actions";
+import { closeCommandAction, quickSaleAction } from "@/app/system-actions";
 import { PrintActionForm } from "@/components/print-action-form";
 
 function toCents(value:string){const n=Number(value||0);return Number.isFinite(n)?Math.round(n*100):0;}
@@ -28,7 +28,7 @@ const basePaymentMethods:Array<{value:Exclude<PaymentMethod,"STORE_CREDIT">;labe
 ];
 function emptyPayment():SplitPayment{return{method:"",amount:"",staffMemberId:""};}
 
-export function PaymentForm({commandId,subtotal,staffMembers,customers}:{commandId:number;subtotal:number;staffMembers:StaffMemberOption[];customers:CustomerOption[]}){
+export function PaymentForm({commandId,subtotal,staffMembers,customers,mode="COMMAND",quickSaleItems="[]",onSuccess,canSubmit=true}:{commandId?:number;subtotal:number;staffMembers:StaffMemberOption[];customers:CustomerOption[];mode?:"COMMAND"|"QUICK_SALE";quickSaleItems?:string;onSuccess?:()=>void;canSubmit?:boolean}){
   const [discount,setDiscount]=useState("0");
   const [service,setService]=useState("0");
   const [paymentMode,setPaymentMode]=useState<PaymentMode>("SINGLE");
@@ -135,8 +135,8 @@ export function PaymentForm({commandId,subtotal,staffMembers,customers}:{command
     setStoreCreditAmount("");setRemainderMethod("");setRemainderStaffMemberId("");
   }
 
-  return <PrintActionForm action={closeCommandAction} className="form-stack">
-    <input type="hidden" name="commandId" value={commandId}/><input type="hidden" name="paymentAllocations" value={JSON.stringify(calculation.allocations)}/><input type="hidden" name="splitCount" value={paymentMode==="MIXED"?"1":splitCount}/><input type="hidden" name="customerId" value={selectedCustomerId}/><input type="hidden" name="createCustomer" value={newCustomerOpen?"1":"0"}/>
+  return <PrintActionForm action={mode==="QUICK_SALE"?quickSaleAction:closeCommandAction} className="form-stack" onSuccess={onSuccess}>
+    {mode==="COMMAND"?<input type="hidden" name="commandId" value={commandId}/>:<input type="hidden" name="quickSaleItems" value={quickSaleItems}/>}<input type="hidden" name="paymentAllocations" value={JSON.stringify(calculation.allocations)}/><input type="hidden" name="splitCount" value={paymentMode==="MIXED"?"1":splitCount}/><input type="hidden" name="customerId" value={selectedCustomerId}/><input type="hidden" name="createCustomer" value={newCustomerOpen?"1":"0"}/>
     <div className="form-grid"><div className="field"><label>Desconto (R$)</label><input className="input" name="discount" type="number" min="0" step="0.01" value={discount} onChange={(event)=>setDiscount(event.target.value)}/></div><div className="field"><label>Taxa de serviço (%) — opcional</label><input className="input" name="servicePercent" type="number" min="0" max="100" step="0.01" value={service} onChange={(event)=>setService(event.target.value)}/></div></div>
     <div className="card payment-summary"><div className="totals"><div className="total-row"><span>Subtotal</span><span>{brl(subtotal)}</span></div>{calculation.discountCents>0&&<div className="total-row"><span>Desconto</span><span>- {brl(calculation.discountCents)}</span></div>}{calculation.serviceCents>0&&<div className="total-row"><span>Taxa</span><span>{brl(calculation.serviceCents)}</span></div>}<div className="total-row grand"><span>Total</span><span>{brl(calculation.total)}</span></div></div></div>
     <section className="card customer-identification"><div className="customer-identification-head"><div><span className="label">IDENTIFICAÇÃO DO CLIENTE — OPCIONAL</span><p>Vincule nome ou CPF para localizar esta venda mais facilmente na manutenção de movimentos.</p></div><button className="btn btn-light btn-small" type="button" onClick={toggleNewCustomer}><UserPlus size={15}/> {newCustomerOpen?"Voltar à busca":"Cadastrar novo"}</button></div>
@@ -156,6 +156,6 @@ export function PaymentForm({commandId,subtotal,staffMembers,customers}:{command
     {calculation.storeCreditUsed>(customerCredit?.balanceCents||0)&&<div className="alert alert-error">O crédito em loja informado ultrapassa o saldo disponível.</div>}
     <section className={`payment-balance ${paymentComplete?"payment-balance-complete":calculation.remaining<0?"payment-balance-over":""}`} aria-live="polite"><div className="payment-balance-head"><span>{paymentComplete?<CircleCheck size={20}/>:<CircleDollarSign size={20}/>} {paymentComplete?"Pagamento completo":calculation.remaining<0?"Valor acima do total":"Saldo restante"}</span><strong>{brl(Math.abs(calculation.remaining))}</strong></div><div className="payment-progress" aria-hidden="true"><span style={{width:`${calculation.progress}%`}}/></div><div className="payment-balance-details"><span>Total da conta <strong>{brl(calculation.total)}</strong></span><span>Total informado <strong>{brl(calculation.paid)}</strong></span></div><small>{paymentComplete?"O fechamento e a impressão da notinha estão liberados.":calculation.remaining<0?`Retire ${brl(Math.abs(calculation.remaining))} de um dos pagamentos.`:paymentMode==="MIXED"?"Informe as formas e os valores até completar o saldo.":calculation.people===1?"Selecione a forma de pagamento para completar o valor.":"O saldo diminui conforme os pagamentos são informados."}</small></section>
     <div className="field"><label>Formato da notinha</label><select className="select" name="format" defaultValue="80"><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
-    <button className="btn btn-primary" type="submit" disabled={!paymentComplete||!customerIdentificationValid}><Printer size={16}/> Finalizar e abrir notinha</button>
+    <button className="btn btn-primary" type="submit" disabled={!canSubmit||!paymentComplete||!customerIdentificationValid}><Printer size={16}/> {mode==="QUICK_SALE"?"Finalizar venda rápida e abrir notinha":"Finalizar e abrir notinha"}</button>
   </PrintActionForm>;
 }

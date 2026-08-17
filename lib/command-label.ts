@@ -10,3 +10,13 @@ export function commandLabel(command: CommandIdentifier) {
   if (command.command_number) return `#${command.command_number}`;
   return "Sem identificação";
 }
+
+export type SaleReference=CommandIdentifier&{
+  sale_channel?:string|null;
+  table_display?:string|null;
+};
+
+export function saleReferenceLabel(sale:SaleReference){
+  if(sale.sale_channel==="QUICK_SALE")return"Venda rápida";
+  return `Comanda ${commandLabel(sale)}${sale.table_display?` · ${sale.table_display}`:""}`;
+}

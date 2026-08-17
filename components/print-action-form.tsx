@@ -6,7 +6,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 type PrintActionResult={url?:string;error?:string};
 type PrintAction=(formData:FormData)=>Promise<PrintActionResult>;
 
-export function PrintActionForm({action,className,children}:{action:PrintAction;className?:string;children:ReactNode}){
+export function PrintActionForm({action,className,children,onSuccess}:{action:PrintAction;className?:string;children:ReactNode;onSuccess?:()=>void}){
   const router=useRouter();
   const [pending,setPending]=useState(false);
   const [error,setError]=useState("");
@@ -25,6 +25,7 @@ export function PrintActionForm({action,className,children}:{action:PrintAction;
       const result=await action(new FormData(form));
       if(!result.url){printTab.close();setError(result.error||"Não foi possível preparar a impressão.");return;}
       printTab.location.href=new URL(result.url,window.location.origin).toString();
+      onSuccess?.();
       router.refresh();
     }catch{
       printTab.close();
