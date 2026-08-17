@@ -506,11 +506,39 @@ export async function closeCommandAction(formData: FormData) {
   let paymentAllocations:SalePaymentAllocation[]=[];
   try{paymentAllocations=paymentAllocationsValue(formData);}catch(error){return{error:error instanceof Error?error.message:"As formas de pagamento estão inválidas."};}
   const splitCount = Math.min(50,Math.max(1, Math.trunc(numberValue(formData.get("splitCount"), 1))));
+  const customerIdRaw=String(formData.get("customerId")??"").trim();
+  const requestedCustomerId=customerIdRaw?Math.trunc(Number(customerIdRaw)):null;
+  const createCustomer=String(formData.get("createCustomer")??"")==="1";
+  const newCustomerName=String(formData.get("newCustomerName")??"").trim().replace(/\s+/g," ");
+  const newCustomerCpf=cpfValue(formData.get("newCustomerCpf"));
+  const newCustomerContact=String(formData.get("newCustomerContact")??"").trim();
+  if(requestedCustomerId!==null&&(!Number.isSafeInteger(requestedCustomerId)||requestedCustomerId<1)) return{error:"O cliente selecionado está inválido."};
+  if(createCustomer&&requestedCustomerId!==null) return{error:"Escolha um cliente cadastrado ou crie um novo cadastro."};
+  if(createCustomer&&newCustomerName.length<2) return{error:"Informe o nome do cliente para criar o cadastro."};
+  if(createCustomer&&newCustomerCpf.length!==11) return{error:"Informe um CPF com 11 números para criar o cadastro."};
+  if(createCustomer&&newCustomerContact.length<5) return{error:"Informe o contato do cliente para criar o cadastro."};
   let saleId = 0;
   try {
     saleId = await transaction(async (client) => {
       const command = await client.query<CommandAuditRecord>("SELECT c.command_number,c.command_name,cl.display_label FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1 AND c.status='OPEN' FOR UPDATE OF c", [commandId]);
       if (!command.rows[0]) throw new Error("Comanda não está aberta.");
+      let saleCustomerId=requestedCustomerId;
+      let customerCreated=false;
+      if(saleCustomerId!==null){
+        const selectedCustomer=await client.query<{id:number}>("SELECT id FROM customers WHERE id=$1 AND active=TRUE",[saleCustomerId]);
+        if(!selectedCustomer.rows[0]) throw new Error("O cliente selecionado está inativo ou não foi encontrado.");
+      }
+      if(createCustomer){
+        const createdCustomer=await client.query<{id:number}>("INSERT INTO customers (name,cpf,contact,created_by) VALUES ($1,$2,$3,$4) ON CONFLICT (cpf) DO NOTHING RETURNING id",[newCustomerName,newCustomerCpf,newCustomerContact,user.id]);
+        if(createdCustomer.rows[0]){
+          saleCustomerId=Number(createdCustomer.rows[0].id);customerCreated=true;
+          await auditLog({userId:user.id,action:"CUSTOMER_CREATED",entityType:"CUSTOMER",entityId:saleCustomerId,description:`Cadastrou o cliente ${newCustomerName} durante o fechamento de uma comanda.`,metadata:{cpf:newCustomerCpf,contact:newCustomerContact,source:"COMMAND_CLOSING"}},client);
+        }else{
+          const existingCustomer=await client.query<{id:number;active:boolean}>("SELECT id,active FROM customers WHERE cpf=$1",[newCustomerCpf]);
+          if(!existingCustomer.rows[0]?.active) throw new Error("Já existe um cadastro inativo com esse CPF.");
+          saleCustomerId=Number(existingCustomer.rows[0].id);
+        }
+      }
       const totalItems = await client.query<{ subtotal:string }>("SELECT COALESCE(SUM(unit_price_cents*quantity),0)::text AS subtotal FROM order_items WHERE command_id=$1 AND status<>'CANCELLED'", [commandId]);
       const subtotal = Math.round(Number(totalItems.rows[0]?.subtotal ?? 0));
       if (subtotal <= 0) throw new Error("A comanda não possui itens.");
@@ -522,6 +550,12 @@ export async function closeCommandAction(formData: FormData) {
       if (paid !== total) throw new Error("A soma das formas de pagamento precisa ser igual ao total da conta.");
       const storeCreditTotals=new Map<number,number>();
       for(const payment of paymentAllocations) if(payment.method==="STORE_CREDIT"&&payment.customerId) storeCreditTotals.set(payment.customerId,(storeCreditTotals.get(payment.customerId)||0)+payment.amountCents);
+      if(storeCreditTotals.size>1) throw new Error("Use o crédito em loja de apenas um cliente por venda.");
+      if(storeCreditTotals.size===1){
+        const creditCustomerId=[...storeCreditTotals.keys()][0];
+        if(saleCustomerId!==null&&saleCustomerId!==creditCustomerId) throw new Error("O crédito em loja precisa pertencer ao cliente identificado na venda.");
+        saleCustomerId=creditCustomerId;
+      }
       if(storeCreditTotals.size>0){
         const ids=[...storeCreditTotals.keys()].sort((a,b)=>a-b);
         const customers=await client.query<{id:number;name:string;store_credit_balance_cents:number}>("SELECT id,name,store_credit_balance_cents FROM customers WHERE id=ANY($1::bigint[]) AND active=TRUE ORDER BY id FOR UPDATE",[ids]);
@@ -541,7 +575,6 @@ export async function closeCommandAction(formData: FormData) {
       }
       const cash = await client.query<{ id:number }>("SELECT id FROM cash_sessions WHERE status='OPEN' LIMIT 1 FOR UPDATE");
       if (!cash.rows[0]) throw new Error("Abra o caixa antes de finalizar a venda.");
-      const saleCustomerId=storeCreditTotals.size===1?[...storeCreditTotals.keys()][0]:null;
       const sale = await client.query<{ id:number }>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,split_count,customer_id,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id", [commandId, cash.rows[0].id, subtotal, discount, service, total, splitCount, saleCustomerId, user.id]);
       for(const payment of paymentAllocations){
         const staffMemberName=payment.staffMemberId?staffMembersById.get(payment.staffMemberId)??null:null;
@@ -552,7 +585,7 @@ export async function closeCommandAction(formData: FormData) {
         }
       }
       await client.query("UPDATE commands SET status='CLOSED',closed_at=NOW() WHERE id=$1", [commandId]);
-      await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda ${commandLabel(command.rows[0])}, ${command.rows[0].display_label}, por ${moneyText(total)}.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, commandName:command.rows[0].command_name, table:command.rows[0].display_label, subtotal, discount, service, total, splitCount, payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId})) } }, client);
+      await auditLog({ userId:user.id, action:"SALE_COMPLETED", entityType:"SALE", entityId:sale.rows[0].id, description:`Finalizou a comanda ${commandLabel(command.rows[0])}, ${command.rows[0].display_label}, por ${moneyText(total)}.`, metadata:{ commandId, commandNumber:command.rows[0].command_number, commandName:command.rows[0].command_name, table:command.rows[0].display_label, customerId:saleCustomerId, customerCreated, subtotal, discount, service, total, splitCount, payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId})) } }, client);
       return sale.rows[0].id;
     });
   } catch (error) { return {error:error instanceof Error ? error.message : "Não foi possível fechar a comanda."}; }

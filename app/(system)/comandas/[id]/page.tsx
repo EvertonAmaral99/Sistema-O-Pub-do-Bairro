@@ -6,7 +6,7 @@ import { query } from "@/lib/db";
 import { formatDateTime, formatMoney, formatQuantity } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
 import { canManageCommand } from "@/lib/roles";
-import { PaymentForm } from "@/components/payment-form";
+import { PaymentForm, type CustomerOption } from "@/components/payment-form";
 import { CommandProductPicker, type CommandProduct } from "@/components/command-product-picker";
 import { PrintActionForm } from "@/components/print-action-form";
 import { commandLabel } from "@/lib/command-label";
@@ -20,7 +20,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
   const { erro } = await searchParams;
   const commandResult = await query<{ id: number; command_number: number|null; command_name:string|null; table_display: string; customer_name: string | null; opened_at: string; notes: string | null; status: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,c.command_name,cl.display_label AS table_display,c.customer_name,c.opened_at,c.notes,c.status,c.priority,c.priority_note FROM commands c JOIN command_locations cl ON cl.command_id=c.id WHERE c.id=$1`, [commandId]);
   const command = commandResult.rows[0]; if (!command) notFound();
-  const [items, products, tables, staffMembers] = await Promise.all([
+  const [items, products, tables, staffMembers, customers] = await Promise.all([
     query<{ id: number; product_name: string; quantity: number|string; unit_price_cents: number; status: string; destination: string;display_unit:string }>("SELECT id,product_name,quantity,unit_price_cents,status,destination,display_unit FROM order_items WHERE command_id=$1 ORDER BY created_at DESC", [commandId]),
     query<CommandProduct>(`SELECT p.id,p.name,p.category,p.price_cents,sp.stock_quantity,sp.unlimited AS stock_unlimited,sp.stock_kind,
       EXISTS(SELECT 1 FROM products linked WHERE linked.stock_pool_id=p.stock_pool_id AND linked.id<>p.id AND linked.deleted_at IS NULL) AS stock_shared,
@@ -29,6 +29,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
       EXISTS(SELECT 1 FROM command_tables current_tables WHERE current_tables.command_id=$1 AND current_tables.table_id=bt.id) AS selected
       FROM bar_tables bt WHERE bt.active=TRUE OR EXISTS(SELECT 1 FROM command_tables current_tables WHERE current_tables.command_id=$1 AND current_tables.table_id=bt.id) ORDER BY bt.number`,[commandId]),
     query<{id:number;name:string;position:string|null}>("SELECT id,name,position FROM staff_members WHERE active=TRUE ORDER BY name"),
+    query<CustomerOption>(`SELECT id,name,cpf,contact,store_credit_balance_cents AS "balanceCents" FROM customers WHERE active=TRUE ORDER BY name LIMIT 500`),
   ]);
   const activeItems = items.rows.filter((item) => item.status !== "CANCELLED");
   const subtotal = Math.round(activeItems.reduce((sum, item) => sum + Number(item.unit_price_cents) * Number(item.quantity), 0));
@@ -64,7 +65,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
             </PrintActionForm>
             {!hasPrepPending&&<small style={{color:"var(--muted)"}}>Somente produtos cadastrados no setor Cozinha geram pedido de preparo.</small>}
             <div className="divider"/>
-            {canManage?<><h3>Fechar comanda</h3><PaymentForm commandId={commandId} subtotal={subtotal} staffMembers={staffMembers.rows}/><div className="divider"/><details className="cancel-command"><summary>Cancelar esta comanda</summary><form action={cancelCommandAction} className="form-stack"><input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Motivo do cancelamento</label><input className="input" name="reason" minLength={3} required/></div><button className="btn btn-danger" type="submit"><XCircle size={16}/> Cancelar comanda e devolver itens ao estoque</button></form></details></>:<div className="permission-lock"><span>Finalizar, cancelar ou alterar itens já lançados é permitido somente para Caixa, Gerente e Administrador.</span></div>}
+            {canManage?<><h3>Fechar comanda</h3><PaymentForm commandId={commandId} subtotal={subtotal} staffMembers={staffMembers.rows} customers={customers.rows}/><div className="divider"/><details className="cancel-command"><summary>Cancelar esta comanda</summary><form action={cancelCommandAction} className="form-stack"><input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Motivo do cancelamento</label><input className="input" name="reason" minLength={3} required/></div><button className="btn btn-danger" type="submit"><XCircle size={16}/> Cancelar comanda e devolver itens ao estoque</button></form></details></>:<div className="permission-lock"><span>Finalizar, cancelar ou alterar itens já lançados é permitido somente para Caixa, Gerente e Administrador.</span></div>}
           </>}
         </aside>
       </div>
