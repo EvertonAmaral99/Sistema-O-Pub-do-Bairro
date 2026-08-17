@@ -3,10 +3,10 @@ import { Plus, Radio } from "lucide-react";
 import { openCommandAction } from "@/app/system-actions";
 import { LiveRefresh } from "@/components/live-refresh";
 import { PriorityInfo } from "@/components/priority-info";
+import { CommandCardIdentifier } from "@/components/command-card-identifier";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
-import { commandLabel } from "@/lib/command-label";
 
 export default async function CommandsPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
   await requirePermission("COMMANDS");
@@ -37,7 +37,7 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
       </section>
       {commands.rows.length === 0 ? <div className="card empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
         {commands.rows.map((command) => { const itemCount=Math.trunc(Number(command.items)); return <Link className={`command-card ${command.priority ? "priority-alert" : ""}`} href={`/comandas/${command.id}`} key={command.id}>
-          <div className="command-top"><span className="command-number">{commandLabel(command)}</span><span className="badge badge-amber">{command.table_display}</span></div>
+          <div className="command-top"><CommandCardIdentifier commandNumber={command.command_number} commandName={command.command_name}/><span className="badge badge-amber">{command.table_display}</span></div>
           {command.priority && <div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
           <p>{command.customer_name || "Cliente não informado"}<br/>{itemCount.toLocaleString("pt-BR")} {itemCount===1?"item":"itens"} · {formatDateTime(command.opened_at)}</p>
           <strong className="money">{formatMoney(command.total)}</strong>
