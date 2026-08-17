@@ -23,7 +23,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     query<{ id: number; command_number: number|null; command_name:string|null; table_display: string; customer_name: string | null; opened_at: string; total: string;priority:boolean;priority_note:string|null }>(`SELECT c.id,c.command_number,c.command_name,cl.display_label AS table_display,c.customer_name,c.opened_at,c.priority,c.priority_note,
       COALESCE(SUM(oi.unit_price_cents*oi.quantity) FILTER (WHERE oi.status<>'CANCELLED'),0)::text AS total
       FROM commands c JOIN command_locations cl ON cl.command_id=c.id LEFT JOIN order_items oi ON oi.command_id=c.id
-      WHERE c.status='OPEN' GROUP BY c.id,cl.display_label ORDER BY c.priority DESC,c.opened_at DESC LIMIT 8`),
+      WHERE c.status='OPEN' GROUP BY c.id,cl.display_label ORDER BY c.priority DESC,c.opened_at DESC`),
   ]);
   const data = stats.rows[0];
   return (
@@ -37,7 +37,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         <div className="card stat"><span className="stat-label"><AlertTriangle size={16}/> Estoque baixo</span><strong className="stat-value">{data.low_stock}</strong><span className="stat-meta">produtos no mínimo ou abaixo</span></div>
       </section>
       <section className="card" style={{ marginTop: 22 }}>
-        <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Comandas em andamento</h3><p>Últimas comandas abertas.</p></div>{canUseCommands && <Link href="/comandas" className="btn btn-light btn-small">Ver todas</Link>}</div>
+        <div className="page-head" style={{ marginBottom: 14 }}><div><h3 style={{ margin: 0 }}>Comandas em andamento</h3><p>Todas as comandas abertas.</p></div></div>
         {commands.rows.length === 0 ? <div className="empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
           {commands.rows.map((command) => canUseCommands ? <DashboardCommandCard command={command} canViewFinance={canViewFinance} key={command.id}/> : <div className={`command-card ${command.priority?"priority-alert":""}`} key={command.id}>
             <div className="command-top"><CommandCardIdentifier commandNumber={command.command_number} commandName={command.command_name}/><span className="badge badge-amber">{command.table_display}</span></div>
