@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CircleCheck, CircleDollarSign, CirclePlus, CreditCard, Printer, Search, Trash2, UserPlus, Users, X } from "lucide-react";
 import { closeCommandAction, quickSaleAction } from "@/app/system-actions";
 import { PrintActionForm } from "@/components/print-action-form";
+import { normalizeQuickSaleCheckoutDraft, type QuickSaleCheckoutDraft, type QuickSalePaymentMethod, type QuickSalePaymentMode, type QuickSaleSplitPayment } from "@/lib/quick-sale-draft";
 
 function toCents(value:string){const n=Number(value||0);return Number.isFinite(n)?Math.round(n*100):0;}
 function brl(cents:number){return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(cents/100);}
@@ -12,9 +13,9 @@ function digits(value:string){return value.replace(/\D/g,"");}
 function formatCpf(value:string){return digits(value).replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,"$1.$2.$3-$4");}
 function searchText(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase("pt-BR");}
 
-type PaymentMethod="CASH"|"PIX"|"DEBIT"|"CREDIT"|"STAFF_VOUCHER"|"STORE_CREDIT";
-type PaymentMode="SINGLE"|"MIXED";
-type SplitPayment={method:PaymentMethod|"";amount:string;staffMemberId:string};
+type PaymentMethod=QuickSalePaymentMethod;
+type PaymentMode=QuickSalePaymentMode;
+type SplitPayment=QuickSaleSplitPayment;
 type PaymentAllocation={method:PaymentMethod;amountCents:number;staffMemberId?:number;customerId?:number};
 export type StaffMemberOption={id:number;name:string;position:string|null};
 export type CustomerOption={id:number;name:string;cpf:string;contact:string;balanceCents:number};
@@ -28,24 +29,26 @@ const basePaymentMethods:Array<{value:Exclude<PaymentMethod,"STORE_CREDIT">;labe
 ];
 function emptyPayment():SplitPayment{return{method:"",amount:"",staffMemberId:""};}
 
-export function PaymentForm({commandId,subtotal,staffMembers,customers,mode="COMMAND",quickSaleItems="[]",onSuccess,canSubmit=true}:{commandId?:number;subtotal:number;staffMembers:StaffMemberOption[];customers:CustomerOption[];mode?:"COMMAND"|"QUICK_SALE";quickSaleItems?:string;onSuccess?:()=>void;canSubmit?:boolean}){
-  const [discount,setDiscount]=useState("0");
-  const [service,setService]=useState("0");
-  const [paymentMode,setPaymentMode]=useState<PaymentMode>("SINGLE");
-  const [splitCount,setSplitCount]=useState("1");
-  const [paymentMethod,setPaymentMethod]=useState<PaymentMethod|"">("");
-  const [staffMemberId,setStaffMemberId]=useState("");
-  const [splitPayments,setSplitPayments]=useState<SplitPayment[]>(()=>[emptyPayment(),emptyPayment()]);
-  const [customerSearch,setCustomerSearch]=useState("");
-  const [selectedCustomerId,setSelectedCustomerId]=useState("");
+export function PaymentForm({commandId,subtotal,staffMembers,customers,mode="COMMAND",quickSaleItems="[]",quickSaleDraftId=null,initialQuickSaleDraft,onQuickSaleDraftChange,quickSaleSubmitAction,onSuccess,canSubmit=true}:{commandId?:number;subtotal:number;staffMembers:StaffMemberOption[];customers:CustomerOption[];mode?:"COMMAND"|"QUICK_SALE";quickSaleItems?:string;quickSaleDraftId?:number|null;initialQuickSaleDraft?:QuickSaleCheckoutDraft;onQuickSaleDraftChange?:(draft:QuickSaleCheckoutDraft)=>void;quickSaleSubmitAction?:(formData:FormData)=>Promise<{url?:string;error?:string}>;onSuccess?:()=>void;canSubmit?:boolean}){
+  const [initialDraft]=useState(()=>normalizeQuickSaleCheckoutDraft(initialQuickSaleDraft));
+  const [discount,setDiscount]=useState(initialDraft.discount);
+  const [service,setService]=useState(initialDraft.service);
+  const [paymentMode,setPaymentMode]=useState<PaymentMode>(initialDraft.paymentMode);
+  const [splitCount,setSplitCount]=useState(initialDraft.splitCount);
+  const [paymentMethod,setPaymentMethod]=useState<PaymentMethod|"">(initialDraft.paymentMethod);
+  const [staffMemberId,setStaffMemberId]=useState(initialDraft.staffMemberId);
+  const [splitPayments,setSplitPayments]=useState<SplitPayment[]>(()=>initialDraft.splitPayments.map((payment)=>({...payment})));
+  const [customerSearch,setCustomerSearch]=useState(initialDraft.customerSearch);
+  const [selectedCustomerId,setSelectedCustomerId]=useState(initialDraft.selectedCustomerId);
   const [customerResultsOpen,setCustomerResultsOpen]=useState(false);
-  const [newCustomerOpen,setNewCustomerOpen]=useState(false);
-  const [newCustomerName,setNewCustomerName]=useState("");
-  const [newCustomerCpf,setNewCustomerCpf]=useState("");
-  const [newCustomerContact,setNewCustomerContact]=useState("");
-  const [storeCreditAmount,setStoreCreditAmount]=useState("");
-  const [remainderMethod,setRemainderMethod]=useState<Exclude<PaymentMethod,"STORE_CREDIT">|"">("");
-  const [remainderStaffMemberId,setRemainderStaffMemberId]=useState("");
+  const [newCustomerOpen,setNewCustomerOpen]=useState(initialDraft.newCustomerOpen);
+  const [newCustomerName,setNewCustomerName]=useState(initialDraft.newCustomerName);
+  const [newCustomerCpf,setNewCustomerCpf]=useState(initialDraft.newCustomerCpf);
+  const [newCustomerContact,setNewCustomerContact]=useState(initialDraft.newCustomerContact);
+  const [storeCreditAmount,setStoreCreditAmount]=useState(initialDraft.storeCreditAmount);
+  const [remainderMethod,setRemainderMethod]=useState<Exclude<PaymentMethod,"STORE_CREDIT">|"">(initialDraft.remainderMethod);
+  const [remainderStaffMemberId,setRemainderStaffMemberId]=useState(initialDraft.remainderStaffMemberId);
+  const [format,setFormat]=useState<"80"|"58"|"a4">(initialDraft.format);
 
   const selectedCustomer=useMemo(()=>customers.find((customer)=>String(customer.id)===selectedCustomerId)??null,[customers,selectedCustomerId]);
   const customerMatches=useMemo(()=>{
@@ -85,6 +88,15 @@ export function PaymentForm({commandId,subtotal,staffMembers,customers,mode="COM
     const progress=total>0?Math.min(100,Math.max(0,(paid/total)*100)):0;
     return{discountCents,serviceCents,total,paid,people,usesPaymentRows,paymentRowCount,perPerson:Math.round(total/people),remaining,progress,allocations,storeCreditUsed};
   },[customerCredit,discount,paymentMethod,paymentMode,remainderMethod,remainderStaffMemberId,service,splitCount,splitPayments,staffMemberId,storeCreditAmount,subtotal]);
+  const quickSaleCheckoutDraft=useMemo<QuickSaleCheckoutDraft>(()=>({
+    discount,service,paymentMode,splitCount,paymentMethod,staffMemberId,
+    splitPayments:splitPayments.map((payment)=>({...payment})),customerSearch,selectedCustomerId,newCustomerOpen,newCustomerName,newCustomerCpf,newCustomerContact,
+    storeCreditAmount,remainderMethod,remainderStaffMemberId,format,
+  }),[customerSearch,discount,format,newCustomerContact,newCustomerCpf,newCustomerName,newCustomerOpen,paymentMethod,paymentMode,remainderMethod,remainderStaffMemberId,selectedCustomerId,service,splitCount,splitPayments,staffMemberId,storeCreditAmount]);
+
+  useEffect(()=>{
+    if(mode==="QUICK_SALE")onQuickSaleDraftChange?.(quickSaleCheckoutDraft);
+  },[mode,onQuickSaleDraftChange,quickSaleCheckoutDraft]);
 
   const splitRowsComplete=!calculation.usesPaymentRows||Array.from({length:calculation.paymentRowCount},(_,index)=>splitPayments[index]).every((payment)=>Boolean(payment?.method)&&toCents(payment?.amount||"")>0);
   const referencesComplete=calculation.allocations.every((payment)=>payment.method!=="STAFF_VOUCHER"||Boolean(payment.staffMemberId&&staffMembers.some((staff)=>Number(staff.id)===payment.staffMemberId)));
@@ -135,8 +147,8 @@ export function PaymentForm({commandId,subtotal,staffMembers,customers,mode="COM
     setStoreCreditAmount("");setRemainderMethod("");setRemainderStaffMemberId("");
   }
 
-  return <PrintActionForm action={mode==="QUICK_SALE"?quickSaleAction:closeCommandAction} className="form-stack" onSuccess={onSuccess}>
-    {mode==="COMMAND"?<input type="hidden" name="commandId" value={commandId}/>:<input type="hidden" name="quickSaleItems" value={quickSaleItems}/>}<input type="hidden" name="paymentAllocations" value={JSON.stringify(calculation.allocations)}/><input type="hidden" name="splitCount" value={paymentMode==="MIXED"?"1":splitCount}/><input type="hidden" name="customerId" value={selectedCustomerId}/><input type="hidden" name="createCustomer" value={newCustomerOpen?"1":"0"}/>
+  return <PrintActionForm action={mode==="QUICK_SALE"?(quickSaleSubmitAction??quickSaleAction):closeCommandAction} className="form-stack" onSuccess={onSuccess}>
+    {mode==="COMMAND"?<input type="hidden" name="commandId" value={commandId}/>:<><input type="hidden" name="quickSaleItems" value={quickSaleItems}/><input type="hidden" name="quickSaleDraftId" value={quickSaleDraftId??""}/></>}<input type="hidden" name="paymentAllocations" value={JSON.stringify(calculation.allocations)}/><input type="hidden" name="splitCount" value={paymentMode==="MIXED"?"1":splitCount}/><input type="hidden" name="customerId" value={selectedCustomerId}/><input type="hidden" name="createCustomer" value={newCustomerOpen?"1":"0"}/>
     <div className="form-grid"><div className="field"><label>Desconto (R$)</label><input className="input" name="discount" type="number" min="0" step="0.01" value={discount} onChange={(event)=>setDiscount(event.target.value)}/></div><div className="field"><label>Taxa de serviço (%) — opcional</label><input className="input" name="servicePercent" type="number" min="0" max="100" step="0.01" value={service} onChange={(event)=>setService(event.target.value)}/></div></div>
     <div className="card payment-summary"><div className="totals"><div className="total-row"><span>Subtotal</span><span>{brl(subtotal)}</span></div>{calculation.discountCents>0&&<div className="total-row"><span>Desconto</span><span>- {brl(calculation.discountCents)}</span></div>}{calculation.serviceCents>0&&<div className="total-row"><span>Taxa</span><span>{brl(calculation.serviceCents)}</span></div>}<div className="total-row grand"><span>Total</span><span>{brl(calculation.total)}</span></div></div></div>
     <section className="card customer-identification"><div className="customer-identification-head"><div><span className="label">IDENTIFICAÇÃO DO CLIENTE — OPCIONAL</span><p>Vincule nome ou CPF para localizar esta venda mais facilmente na manutenção de movimentos.</p></div><button className="btn btn-light btn-small" type="button" onClick={toggleNewCustomer}><UserPlus size={15}/> {newCustomerOpen?"Voltar à busca":"Cadastrar novo"}</button></div>
@@ -155,7 +167,7 @@ export function PaymentForm({commandId,subtotal,staffMembers,customers,mode="COM
       <small>{paymentMethod&&paymentMethod!=="STORE_CREDIT"?`O valor de ${brl(calculation.total)} será lançado automaticamente.`:"Escolha uma opção para lançar o pagamento."}</small></div>:<div className="split-payment-list">{paymentMode==="MIXED"&&<div className="mixed-payment-head"><div><strong>Combine as formas de pagamento</strong><small>Informe cada valor ou use o botão “Usar saldo restante”.</small></div><button className="btn btn-light btn-small" type="button" onClick={addMixedPayment} disabled={splitPayments.length>=10}><CirclePlus size={15}/> Adicionar forma</button></div>}{Array.from({length:calculation.paymentRowCount},(_,index)=>{const payment=splitPayments[index]||emptyPayment();return <div className="split-payment-row" key={index}><div className="payment-row-title"><strong>{paymentMode==="MIXED"?`Pagamento ${index+1}`:`Pessoa ${index+1}`}</strong>{paymentMode==="MIXED"&&<button className="mixed-payment-remove" type="button" onClick={()=>removeMixedPayment(index)} disabled={splitPayments.length<=2} aria-label={`Remover pagamento ${index+1}`} title="Remover forma"><Trash2 size={14}/></button>}</div><div className="field"><label htmlFor={`payment-method-${index}`}>Forma de pagamento</label><select className="select" id={`payment-method-${index}`} value={payment.method} onChange={(event)=>updateSplitPayment(index,{method:event.target.value as PaymentMethod|"",staffMemberId:""})} required><option value="">Selecione</option>{paymentMethods.map((method)=><option value={method.value} key={method.value}>{method.label}</option>)}</select></div><div className="field"><label htmlFor={`payment-amount-${index}`}>Valor pago (R$)</label><input className="input" id={`payment-amount-${index}`} type="number" min="0.01" step="0.01" placeholder={paymentMode==="MIXED"?"0,00":centsInput(calculation.perPerson)} value={payment.amount} onChange={(event)=>updateSplitPayment(index,{amount:event.target.value})} required/>{paymentMode==="MIXED"&&<button className="mixed-fill-button" type="button" onClick={()=>fillRemainingPayment(index)} disabled={remainingForPayment(index)<=0}>Usar saldo restante</button>}</div>{payment.method==="STAFF_VOUCHER"&&<div className="field"><label>Funcionário responsável pelo vale</label><select className="select" value={payment.staffMemberId} onChange={(event)=>updateSplitPayment(index,{staffMemberId:event.target.value})} required><option value="">Selecione o funcionário</option>{staffMembers.map((staff)=><option value={staff.id} key={staff.id}>{staff.name}{staff.position?` — ${staff.position}`:""}</option>)}</select></div>}</div>;})}<small className="split-payment-help">{paymentMode==="MIXED"?"Você pode combinar até 10 formas. A soma precisa ser igual ao total da conta.":"Informe como cada pessoa pagou. O sistema registra cada lançamento separadamente."}</small></div>}
     {calculation.storeCreditUsed>(customerCredit?.balanceCents||0)&&<div className="alert alert-error">O crédito em loja informado ultrapassa o saldo disponível.</div>}
     <section className={`payment-balance ${paymentComplete?"payment-balance-complete":calculation.remaining<0?"payment-balance-over":""}`} aria-live="polite"><div className="payment-balance-head"><span>{paymentComplete?<CircleCheck size={20}/>:<CircleDollarSign size={20}/>} {paymentComplete?"Pagamento completo":calculation.remaining<0?"Valor acima do total":"Saldo restante"}</span><strong>{brl(Math.abs(calculation.remaining))}</strong></div><div className="payment-progress" aria-hidden="true"><span style={{width:`${calculation.progress}%`}}/></div><div className="payment-balance-details"><span>Total da conta <strong>{brl(calculation.total)}</strong></span><span>Total informado <strong>{brl(calculation.paid)}</strong></span></div><small>{paymentComplete?"O fechamento e a impressão da notinha estão liberados.":calculation.remaining<0?`Retire ${brl(Math.abs(calculation.remaining))} de um dos pagamentos.`:paymentMode==="MIXED"?"Informe as formas e os valores até completar o saldo.":calculation.people===1?"Selecione a forma de pagamento para completar o valor.":"O saldo diminui conforme os pagamentos são informados."}</small></section>
-    <div className="field"><label>Formato da notinha</label><select className="select" name="format" defaultValue="80"><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
+    <div className="field"><label>Formato da notinha</label><select className="select" name="format" value={format} onChange={(event)=>setFormat(event.target.value as "80"|"58"|"a4")}><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
     <button className="btn btn-primary" type="submit" disabled={!canSubmit||!paymentComplete||!customerIdentificationValid}><Printer size={16}/> {mode==="QUICK_SALE"?"Finalizar venda rápida e abrir notinha":"Finalizar e abrir notinha"}</button>
   </PrintActionForm>;
 }
