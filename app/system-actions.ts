@@ -714,6 +714,7 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
   const newCustomerName=String(formData.get("newCustomerName")??"").trim().replace(/\s+/g," ");
   const newCustomerCpf=cpfValue(formData.get("newCustomerCpf"));
   const newCustomerContact=String(formData.get("newCustomerContact")??"").trim();
+  const guestCustomerName=String(formData.get("guestCustomerName")??"").trim().replace(/\s+/g," ");
   const fulfillmentType=String(formData.get("fulfillmentType")??"COUNTER");
   if(!["COUNTER","APP_PICKUP"].includes(fulfillmentType)) return{error:"O tipo de atendimento informado é inválido."};
   let courierAppName="";
@@ -727,6 +728,8 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
   if(createCustomer&&newCustomerName.length<2) return{error:"Informe o nome do cliente para criar o cadastro."};
   if(createCustomer&&newCustomerCpf.length!==11) return{error:"Informe um CPF com 11 números para criar o cadastro."};
   if(createCustomer&&newCustomerContact.length<5) return{error:"Informe o contato do cliente para criar o cadastro."};
+  if(guestCustomerName&&guestCustomerName.length<2) return{error:"Digite ao menos 2 caracteres para identificar o cliente sem cadastro."};
+  if(guestCustomerName.length>120) return{error:"O nome do cliente sem cadastro deve ter no máximo 120 caracteres."};
 
   let saleId=0;
   try{
@@ -736,7 +739,7 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
         if(!pendingDraft.rows[0]) throw new Error("Essa pendência de venda não existe mais ou já foi finalizada.");
       }
       let saleCustomerId=requestedCustomerId;
-      let saleCustomerName:string|null=null;
+      let saleCustomerName:string|null=guestCustomerName||null;
       let customerCreated=false;
       if(saleCustomerId!==null){
         const selectedCustomer=await client.query<{id:number;name:string}>("SELECT id,name FROM customers WHERE id=$1 AND active=TRUE FOR SHARE",[saleCustomerId]);
@@ -861,7 +864,7 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
         if(deliveryId===null)throw new Error("Não foi possível gerar um código de retirada. Tente finalizar novamente.");
         await auditLog({userId:user.id,action:"DELIVERY_ORDER_CREATED",entityType:"DELIVERY",entityId:deliveryId,description:`Criou o pedido ${deliveryOrderLabel(deliveryId)} para retirada por aplicativo.`,metadata:{saleId:Number(sale.rows[0].id),commandId,status:initialStatus,hasCourierAppCode:Boolean(courierAppCode),courierAppName:courierAppName||null}},client);
       }
-      await auditLog({userId:user.id,action:"QUICK_SALE_COMPLETED",entityType:"SALE",entityId:sale.rows[0].id,description:`Finalizou a venda rápida #${sale.rows[0].id} por ${moneyText(total)}.`,metadata:{commandId,customerId:saleCustomerId,customerCreated,subtotal,discount,service,total,splitCount,kitchenItems:kitchenItemIds.length,fulfillmentType,deliveryId,items:products.rows.map((product)=>({productId:Number(product.id),productName:product.name,quantity:quantitiesByProduct.get(Number(product.id))||0})),payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId}))}},client);
+      await auditLog({userId:user.id,action:"QUICK_SALE_COMPLETED",entityType:"SALE",entityId:sale.rows[0].id,description:`Finalizou a venda rápida #${sale.rows[0].id} por ${moneyText(total)}.`,metadata:{commandId,customerId:saleCustomerId,customerName:saleCustomerName,customerCreated,customerWithoutRegistration:saleCustomerId===null&&Boolean(saleCustomerName),subtotal,discount,service,total,splitCount,kitchenItems:kitchenItemIds.length,fulfillmentType,deliveryId,items:products.rows.map((product)=>({productId:Number(product.id),productName:product.name,quantity:quantitiesByProduct.get(Number(product.id))||0})),payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId}))}},client);
       if(quickSaleDraftId!==null) await client.query("DELETE FROM quick_sale_pending_orders WHERE id=$1",[quickSaleDraftId]);
       await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
       return Number(sale.rows[0].id);
