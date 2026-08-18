@@ -31,7 +31,7 @@ function customerLabel(draft:QuickSaleCheckoutDraft,customers:Map<number,string>
   if(draft.newCustomerOpen&&draft.newCustomerName.trim())return`${draft.newCustomerName.trim()} (cadastro pendente)`;
   const selected=customers.get(Number(draft.selectedCustomerId));
   if(selected)return selected;
-  if(draft.customerSearch.trim())return`${draft.customerSearch.trim()} (não confirmado)`;
+  if(draft.customerSearch.trim())return`${draft.customerSearch.trim()} (sem cadastro)`;
   return"Não identificado";
 }
 
