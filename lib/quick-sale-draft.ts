@@ -1,5 +1,6 @@
 export type QuickSalePaymentMethod="CASH"|"PIX"|"DEBIT"|"CREDIT"|"STAFF_VOUCHER"|"STORE_CREDIT";
 export type QuickSalePaymentMode="SINGLE"|"MIXED";
+export type QuickSaleFulfillmentType="COUNTER"|"APP_PICKUP";
 export type QuickSaleSplitPayment={method:QuickSalePaymentMethod|"";amount:string;staffMemberId:string};
 
 export type QuickSaleCheckoutDraft={
@@ -20,6 +21,9 @@ export type QuickSaleCheckoutDraft={
   remainderMethod:Exclude<QuickSalePaymentMethod,"STORE_CREDIT">|"";
   remainderStaffMemberId:string;
   format:"80"|"58"|"a4";
+  fulfillmentType:QuickSaleFulfillmentType;
+  courierAppName:string;
+  courierAppCode:string;
 };
 
 const paymentMethods=new Set<QuickSalePaymentMethod>(["CASH","PIX","DEBIT","CREDIT","STAFF_VOUCHER","STORE_CREDIT"]);
@@ -51,7 +55,7 @@ export function emptyQuickSaleCheckoutDraft():QuickSaleCheckoutDraft{
     discount:"0",service:"0",paymentMode:"SINGLE",splitCount:"1",paymentMethod:"",staffMemberId:"",
     splitPayments:[{method:"",amount:"",staffMemberId:""},{method:"",amount:"",staffMemberId:""}],
     customerSearch:"",selectedCustomerId:"",newCustomerOpen:false,newCustomerName:"",newCustomerCpf:"",newCustomerContact:"",
-    storeCreditAmount:"",remainderMethod:"",remainderStaffMemberId:"",format:"80",
+    storeCreditAmount:"",remainderMethod:"",remainderStaffMemberId:"",format:"80",fulfillmentType:"COUNTER",courierAppName:"",courierAppCode:"",
   };
 }
 
@@ -83,6 +87,9 @@ export function normalizeQuickSaleCheckoutDraft(value:unknown):QuickSaleCheckout
     remainderMethod:remainderMethodValue(source.remainderMethod),
     remainderStaffMemberId:idValue(source.remainderStaffMemberId),
     format,
+    fulfillmentType:source.fulfillmentType==="APP_PICKUP"?"APP_PICKUP":"COUNTER",
+    courierAppName:textValue(source.courierAppName,60),
+    courierAppCode:textValue(source.courierAppCode,40),
   };
 }
 

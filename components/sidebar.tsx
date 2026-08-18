@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, Boxes, CalendarDays, ChefHat, CircleDollarSign, ClipboardList, Clock3, ContactRound, FileClock, LayoutDashboard, LogOut, Menu, Package, ScrollText, Settings, ShoppingBasket, TrendingUp, UsersRound, Wrench, X } from "lucide-react";
+import { BarChart3, Bike, Boxes, CalendarDays, ChefHat, CircleDollarSign, ClipboardList, Clock3, ContactRound, FileClock, LayoutDashboard, LogOut, Menu, Package, ScrollText, Settings, ShoppingBasket, TrendingUp, UsersRound, Wrench, X } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 import { BrandLogo } from "@/components/brand-logo";
 import type { Permission, Role, SessionUser } from "@/lib/roles";
@@ -15,6 +15,7 @@ const links: LinkItem[] = [
   { href: "/comandas", label: "Comandas", icon: ClipboardList, permission: "COMMANDS" },
   { href: "/venda-rapida", label: "Venda rápida", icon: ShoppingBasket, roles: ["ADMIN", "MANAGER", "CASHIER"] },
   { href: "/pendencias-venda", label: "Pendências de venda", icon: FileClock, roles: ["ADMIN", "MANAGER", "CASHIER"] },
+  { href: "/delivery", label: "Delivery", icon: Bike, roles: ["ADMIN", "MANAGER", "CASHIER"] },
   { href: "/clientes", label: "Clientes", icon: ContactRound, permission: "CUSTOMERS" },
   { href: "/funcionarios", label: "Funcionários", icon: UsersRound, roles: ["ADMIN", "MANAGER"] },
   { href: "/cozinha", label: "Cozinha", icon: ChefHat, permission: "KITCHEN" },

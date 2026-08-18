@@ -1,5 +1,6 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auditLog } from "@/lib/audit";
@@ -7,6 +8,7 @@ import { hashPassword, requirePermission, requireRole, requireUser, verifyPasswo
 import { transaction } from "@/lib/db";
 import { canManageCommand, defaultPermissionsByRole, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
 import { commandLabel, saleReferenceLabel } from "@/lib/command-label";
+import { courierText, deliveryOrderLabel } from "@/lib/delivery";
 import { normalizeQuickSaleCheckoutDraft, quickSalePendingLabel } from "@/lib/quick-sale-draft";
 
 type CommandAuditRecord = { command_number:number|null; command_name:string|null; display_label:string };
@@ -573,13 +575,24 @@ export async function updateKitchenStatusAction(formData: FormData) {
   const status = String(formData.get("status") ?? "");
   if (!["PREPARING","READY","DELIVERED"].includes(status)) throw new Error("Situação inválida.");
   await transaction(async (client) => {
-    const item = await client.query<{ product_name:string;command_number:number|null;command_name:string|null;display_label:string }>("SELECT oi.product_name,c.command_number,c.command_name,cl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE oi.id=$1 AND oi.destination='KITCHEN' AND oi.status<>'CANCELLED' FOR UPDATE OF oi", [itemId]);
+    const item = await client.query<{ command_id:number;product_name:string;command_number:number|null;command_name:string|null;display_label:string }>("SELECT oi.command_id,oi.product_name,c.command_number,c.command_name,cl.display_label FROM order_items oi JOIN commands c ON c.id=oi.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE oi.id=$1 AND oi.destination='KITCHEN' AND oi.status<>'CANCELLED' FOR UPDATE OF oi", [itemId]);
     if (!item.rows[0]) throw new Error("Item da cozinha não encontrado.");
+    const delivery=await client.query<{id:number;status:string}>("SELECT d.id,d.status FROM delivery_orders d JOIN sales s ON s.id=d.sale_id WHERE s.command_id=$1 AND d.status IN ('PREPARING','READY') FOR UPDATE OF d",[item.rows[0].command_id]);
+    if(delivery.rows[0]&&status==="DELIVERED")throw new Error("Pedidos de delivery só podem ser entregues após confirmar o código na aba Delivery.");
     await client.query("UPDATE order_items SET status=$1 WHERE id=$2", [status, itemId]);
     const labels:Record<string,string> = { PREPARING:"em preparo", READY:"pronto", DELIVERED:"entregue" };
     await auditLog({ userId:user.id, action:"KITCHEN_STATUS_UPDATED", entityType:"ORDER_ITEM", entityId:itemId, description:`Marcou ${item.rows[0].product_name} da comanda ${commandLabel(item.rows[0])}, ${item.rows[0].display_label}, como ${labels[status]}.`, metadata:{ commandNumber:item.rows[0].command_number, commandName:item.rows[0].command_name, table:item.rows[0].display_label, productName:item.rows[0].product_name, status } }, client);
+    if(delivery.rows[0]){
+      const waiting=await client.query<{waiting:boolean}>("SELECT EXISTS(SELECT 1 FROM order_items WHERE command_id=$1 AND destination='KITCHEN' AND status NOT IN ('READY','DELIVERED','CANCELLED')) AS waiting",[item.rows[0].command_id]);
+      const nextStatus=waiting.rows[0]?.waiting?"PREPARING":"READY";
+      if(delivery.rows[0].status!==nextStatus){
+        await client.query("UPDATE delivery_orders SET status=$1,ready_at=CASE WHEN $1='READY' THEN NOW() ELSE NULL END,ready_by=CASE WHEN $1='READY' THEN $2 ELSE NULL END,updated_at=NOW() WHERE id=$3",[nextStatus,user.id,delivery.rows[0].id]);
+        if(nextStatus==="READY") await auditLog({userId:user.id,action:"DELIVERY_READY",entityType:"DELIVERY",entityId:delivery.rows[0].id,description:`Marcou automaticamente o pedido ${deliveryOrderLabel(delivery.rows[0].id)} como pronto para retirada.`},client);
+      }
+    }
   });
   revalidatePath("/cozinha");
+  revalidatePath("/delivery");
 }
 
 export async function closeCommandAction(formData: FormData) {
@@ -701,6 +714,14 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
   const newCustomerName=String(formData.get("newCustomerName")??"").trim().replace(/\s+/g," ");
   const newCustomerCpf=cpfValue(formData.get("newCustomerCpf"));
   const newCustomerContact=String(formData.get("newCustomerContact")??"").trim();
+  const fulfillmentType=String(formData.get("fulfillmentType")??"COUNTER");
+  if(!["COUNTER","APP_PICKUP"].includes(fulfillmentType)) return{error:"O tipo de atendimento informado é inválido."};
+  let courierAppName="";
+  let courierAppCode="";
+  try{
+    courierAppName=courierText(formData.get("courierAppName"),60);
+    courierAppCode=courierText(formData.get("courierAppCode"),40);
+  }catch(error){return{error:error instanceof Error?error.message:"Os dados da retirada por aplicativo estão inválidos."};}
   if(requestedCustomerId!==null&&(!Number.isSafeInteger(requestedCustomerId)||requestedCustomerId<1)) return{error:"O cliente selecionado está inválido."};
   if(createCustomer&&requestedCustomerId!==null) return{error:"Escolha um cliente cadastrado ou crie um novo cadastro."};
   if(createCustomer&&newCustomerName.length<2) return{error:"Informe o nome do cliente para criar o cadastro."};
@@ -827,7 +848,20 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
           await client.query("INSERT INTO customer_credit_movements (customer_id,amount_cents,movement_type,sale_id,payment_id,notes,created_by) VALUES ($1,$2,'SALE_USED',$3,$4,$5,$6)",[payment.customerId,-payment.amountCents,sale.rows[0].id,createdPayment.rows[0].id,`Crédito usado na venda rápida #${sale.rows[0].id}`,user.id]);
         }
       }
-      await auditLog({userId:user.id,action:"QUICK_SALE_COMPLETED",entityType:"SALE",entityId:sale.rows[0].id,description:`Finalizou a venda rápida #${sale.rows[0].id} por ${moneyText(total)}.`,metadata:{commandId,customerId:saleCustomerId,customerCreated,subtotal,discount,service,total,splitCount,kitchenItems:kitchenItemIds.length,items:products.rows.map((product)=>({productId:Number(product.id),productName:product.name,quantity:quantitiesByProduct.get(Number(product.id))||0})),payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId}))}},client);
+      let deliveryId:number|null=null;
+      if(fulfillmentType==="APP_PICKUP"){
+        const initialStatus=kitchenItemIds.length>0?"PREPARING":"READY";
+        for(let attempt=0;attempt<40;attempt+=1){
+          const pickupCode=randomInt(0,10000).toString().padStart(4,"0");
+          const createdDelivery=await client.query<{id:number}>(`INSERT INTO delivery_orders (sale_id,pickup_code,courier_app_name,courier_app_code,status,created_by,ready_at,ready_by)
+            VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,CASE WHEN $5='READY' THEN NOW() ELSE NULL END,CASE WHEN $5='READY' THEN $6 ELSE NULL END)
+            ON CONFLICT DO NOTHING RETURNING id`,[sale.rows[0].id,pickupCode,courierAppName,courierAppCode,initialStatus,user.id]);
+          if(createdDelivery.rows[0]){deliveryId=Number(createdDelivery.rows[0].id);break;}
+        }
+        if(deliveryId===null)throw new Error("Não foi possível gerar um código de retirada. Tente finalizar novamente.");
+        await auditLog({userId:user.id,action:"DELIVERY_ORDER_CREATED",entityType:"DELIVERY",entityId:deliveryId,description:`Criou o pedido ${deliveryOrderLabel(deliveryId)} para retirada por aplicativo.`,metadata:{saleId:Number(sale.rows[0].id),commandId,status:initialStatus,hasCourierAppCode:Boolean(courierAppCode),courierAppName:courierAppName||null}},client);
+      }
+      await auditLog({userId:user.id,action:"QUICK_SALE_COMPLETED",entityType:"SALE",entityId:sale.rows[0].id,description:`Finalizou a venda rápida #${sale.rows[0].id} por ${moneyText(total)}.`,metadata:{commandId,customerId:saleCustomerId,customerCreated,subtotal,discount,service,total,splitCount,kitchenItems:kitchenItemIds.length,fulfillmentType,deliveryId,items:products.rows.map((product)=>({productId:Number(product.id),productName:product.name,quantity:quantitiesByProduct.get(Number(product.id))||0})),payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId}))}},client);
       if(quickSaleDraftId!==null) await client.query("DELETE FROM quick_sale_pending_orders WHERE id=$1",[quickSaleDraftId]);
       await client.query("DELETE FROM quick_sale_drafts WHERE user_id=$1",[user.id]);
       return Number(sale.rows[0].id);
@@ -844,7 +878,66 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
   revalidatePath("/clientes");
   revalidatePath("/relatorios");
   revalidatePath("/manutencao-movimento");
+  revalidatePath("/delivery");
   return{url:`/imprimir/venda/${saleId}?formato=${encodeURIComponent(format)}`};
+}
+
+export async function saveDeliveryAppCodeAction(formData:FormData){
+  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const deliveryId=positiveId(formData.get("deliveryId"));
+  let courierAppName="";
+  let courierAppCode="";
+  try{
+    courierAppName=courierText(formData.get("courierAppName"),60);
+    courierAppCode=courierText(formData.get("courierAppCode"),40);
+  }catch(error){fail("/delivery",error instanceof Error?error.message:"Os dados do aplicativo estão inválidos.");}
+  try{
+    await transaction(async(client)=>{
+      const updated=await client.query<{id:number}>("UPDATE delivery_orders SET courier_app_name=NULLIF($1,''),courier_app_code=NULLIF($2,''),updated_at=NOW() WHERE id=$3 AND status IN ('PREPARING','READY') RETURNING id",[courierAppName,courierAppCode,deliveryId]);
+      if(!updated.rows[0])throw new Error("Esse pedido não está mais disponível para alteração.");
+      await auditLog({userId:user.id,action:"DELIVERY_APP_CODE_UPDATED",entityType:"DELIVERY",entityId:deliveryId,description:`Atualizou os dados do motoboy no pedido ${deliveryOrderLabel(deliveryId)}.`,metadata:{courierAppName:courierAppName||null,hasCourierAppCode:Boolean(courierAppCode)}},client);
+    });
+  }catch(error){fail("/delivery",error instanceof Error?error.message:"Não foi possível salvar o código do aplicativo.");}
+  revalidatePath("/delivery");
+  redirect(`/delivery?codigo=salvo&pedido=${deliveryId}`);
+}
+
+export async function confirmDeliveryPickupAction(formData:FormData){
+  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const deliveryId=positiveId(formData.get("deliveryId"));
+  const pickupCode=String(formData.get("pickupCode")??"").trim();
+  if(!/^\d{4}$/.test(pickupCode))fail("/delivery","Digite exatamente os 4 números informados pelo motoboy.");
+  const result=await transaction(async(client)=>{
+    const reference=await client.query<{command_id:number}>("SELECT s.command_id FROM delivery_orders d JOIN sales s ON s.id=d.sale_id WHERE d.id=$1",[deliveryId]);
+    if(!reference.rows[0])return{success:false,error:"Pedido de delivery não encontrado."};
+    const items=await client.query<{destination:string;status:string}>("SELECT destination,status FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' ORDER BY id FOR UPDATE",[reference.rows[0].command_id]);
+    const delivery=await client.query<{id:number;pickup_code:string;courier_app_code:string|null;status:string;failed_attempts:number;locked:boolean;sale_id:number}>(`SELECT d.id,d.pickup_code,d.courier_app_code,d.status,d.failed_attempts,d.sale_id,
+      (d.failed_attempts>=5 AND d.last_failed_at>NOW()-INTERVAL '5 minutes') AS locked
+      FROM delivery_orders d JOIN sales s ON s.id=d.sale_id WHERE d.id=$1 AND s.status='COMPLETED' FOR UPDATE OF d`,[deliveryId]);
+    const order=delivery.rows[0];
+    if(!order)return{success:false,error:"Esse pedido foi cancelado ou não existe mais."};
+    if(order.status!=="READY")return{success:false,error:order.status==="PREPARING"?"O pedido ainda está em preparo.":"Esse pedido já foi retirado ou cancelado."};
+    const kitchenStillPreparing=items.rows.some((item)=>item.destination==="KITCHEN"&&!['READY','DELIVERED'].includes(item.status));
+    if(kitchenStillPreparing){
+      await client.query("UPDATE delivery_orders SET status='PREPARING',ready_at=NULL,ready_by=NULL,updated_at=NOW() WHERE id=$1",[deliveryId]);
+      return{success:false,error:"Ainda existem itens da cozinha em preparo. A retirada não foi autorizada."};
+    }
+    if(!order.courier_app_code)return{success:false,error:"Salve primeiro o código do aplicativo informado pelo cliente."};
+    if(order.locked)return{success:false,error:"Muitas tentativas incorretas. Aguarde 5 minutos antes de tentar novamente."};
+    if(order.pickup_code!==pickupCode){
+      const failed=await client.query<{failed_attempts:number}>(`UPDATE delivery_orders SET failed_attempts=CASE WHEN last_failed_at IS NULL OR last_failed_at<NOW()-INTERVAL '5 minutes' THEN 1 ELSE failed_attempts+1 END,last_failed_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING failed_attempts`,[deliveryId]);
+      await auditLog({userId:user.id,action:"DELIVERY_PICKUP_CODE_FAILED",entityType:"DELIVERY",entityId:deliveryId,description:`Recusou a retirada do pedido ${deliveryOrderLabel(deliveryId)} porque o código não conferiu.`,metadata:{attempt:Number(failed.rows[0]?.failed_attempts??1)}},client);
+      return{success:false,error:"O código não confere. A retirada não foi autorizada."};
+    }
+    await client.query("UPDATE delivery_orders SET status='COLLECTED',collected_at=NOW(),collected_by=$1,failed_attempts=0,last_failed_at=NULL,updated_at=NOW() WHERE id=$2",[user.id,deliveryId]);
+    await client.query("UPDATE order_items SET status='DELIVERED' WHERE command_id=$1 AND destination='KITCHEN' AND status IN ('READY','DELIVERED')",[reference.rows[0].command_id]);
+    await auditLog({userId:user.id,action:"DELIVERY_COLLECTED",entityType:"DELIVERY",entityId:deliveryId,description:`Confirmou o código e liberou a retirada do pedido ${deliveryOrderLabel(deliveryId)}.`,metadata:{saleId:Number(order.sale_id)}},client);
+    return{success:true,error:""};
+  });
+  if(!result.success)fail("/delivery",result.error);
+  revalidatePath("/delivery");
+  revalidatePath("/cozinha");
+  redirect(`/delivery?retirada=confirmada&pedido=${deliveryId}`);
 }
 
 export async function cancelCommandAction(formData: FormData) {
@@ -1271,6 +1364,8 @@ export async function cancelSaleAction(formData: FormData) {
       await client.query("UPDATE payments SET staff_voucher_status='CANCELLED' WHERE sale_id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='PENDING' AND voided_at IS NULL",[saleId]);
       await client.query("UPDATE sales SET status='CANCELLED',cancelled_by=$1,cancelled_at=NOW(),cancellation_reason=$2 WHERE id=$3", [user.id, reason, saleId]);
       await client.query("UPDATE commands SET status='CANCELLED',cancelled_by=$1,cancellation_reason=$2,closed_at=COALESCE(closed_at,NOW()) WHERE id=$3", [user.id,reason,sale.rows[0].command_id]);
+      const cancelledDelivery=await client.query<{id:number}>("UPDATE delivery_orders SET status='CANCELLED',cancelled_by=$1,cancelled_at=NOW(),updated_at=NOW() WHERE sale_id=$2 AND status<>'CANCELLED' RETURNING id",[user.id,saleId]);
+      if(cancelledDelivery.rows[0])await auditLog({userId:user.id,action:"DELIVERY_CANCELLED",entityType:"DELIVERY",entityId:cancelledDelivery.rows[0].id,description:`Cancelou o pedido ${deliveryOrderLabel(cancelledDelivery.rows[0].id)} junto com a venda #${saleId}.`,metadata:{saleId,reason}},client);
       await auditLog({ userId:user.id, action:"SALE_CANCELLED", entityType:"SALE", entityId:saleId, description:`Cancelou a venda #${saleId}, ${saleReferenceLabel({...sale.rows[0],table_display:sale.rows[0].display_label})}, de ${moneyText(Number(sale.rows[0].total_cents))}. Motivo: ${reason}`, metadata:{ reason, commandId:sale.rows[0].command_id, commandNumber:sale.rows[0].command_number, commandName:sale.rows[0].command_name, saleChannel:sale.rows[0].sale_channel, table:sale.rows[0].display_label } }, client);
     });
   } catch (error) { fail("/relatorios", error instanceof Error ? error.message : "Não foi possível cancelar a venda."); }
@@ -1283,5 +1378,6 @@ export async function cancelSaleAction(formData: FormData) {
   revalidatePath("/painel");
   revalidatePath("/clientes");
   revalidatePath("/pendencias");
+  revalidatePath("/delivery");
   redirect("/relatorios");
 }
