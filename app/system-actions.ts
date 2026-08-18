@@ -586,7 +586,7 @@ export async function updateKitchenStatusAction(formData: FormData) {
       const waiting=await client.query<{waiting:boolean}>("SELECT EXISTS(SELECT 1 FROM order_items WHERE command_id=$1 AND destination='KITCHEN' AND status NOT IN ('READY','DELIVERED','CANCELLED')) AS waiting",[item.rows[0].command_id]);
       const nextStatus=waiting.rows[0]?.waiting?"PREPARING":"READY";
       if(delivery.rows[0].status!==nextStatus){
-        await client.query("UPDATE delivery_orders SET status=$1,ready_at=CASE WHEN $1='READY' THEN NOW() ELSE NULL END,ready_by=CASE WHEN $1='READY' THEN $2 ELSE NULL END,updated_at=NOW() WHERE id=$3",[nextStatus,user.id,delivery.rows[0].id]);
+        await client.query("UPDATE delivery_orders SET status=$1,ready_at=CASE WHEN $1='READY' THEN NOW() ELSE NULL END,ready_by=CASE WHEN $1='READY' THEN $2::bigint ELSE NULL::bigint END,updated_at=NOW() WHERE id=$3",[nextStatus,user.id,delivery.rows[0].id]);
         if(nextStatus==="READY") await auditLog({userId:user.id,action:"DELIVERY_READY",entityType:"DELIVERY",entityId:delivery.rows[0].id,description:`Marcou automaticamente o pedido ${deliveryOrderLabel(delivery.rows[0].id)} como pronto para retirada.`},client);
       }
     }
@@ -854,7 +854,7 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
         for(let attempt=0;attempt<40;attempt+=1){
           const pickupCode=randomInt(0,10000).toString().padStart(4,"0");
           const createdDelivery=await client.query<{id:number}>(`INSERT INTO delivery_orders (sale_id,pickup_code,courier_app_name,courier_app_code,status,created_by,ready_at,ready_by)
-            VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,CASE WHEN $5='READY' THEN NOW() ELSE NULL END,CASE WHEN $5='READY' THEN $6 ELSE NULL END)
+            VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6::bigint,CASE WHEN $5='READY' THEN NOW() ELSE NULL END,CASE WHEN $5='READY' THEN $6::bigint ELSE NULL::bigint END)
             ON CONFLICT DO NOTHING RETURNING id`,[sale.rows[0].id,pickupCode,courierAppName,courierAppCode,initialStatus,user.id]);
           if(createdDelivery.rows[0]){deliveryId=Number(createdDelivery.rows[0].id);break;}
         }
