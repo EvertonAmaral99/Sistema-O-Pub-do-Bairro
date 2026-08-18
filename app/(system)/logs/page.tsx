@@ -7,14 +7,14 @@ import { formatDateTime } from "@/lib/format";
 type AuditRow = { id:number;action:string;entity_type:string;entity_id:string|null;description:string;created_at:string;user_name:string;username:string|null };
 
 const entityLabel: Record<string, string> = {
-  CASH:"Caixa",COMMAND:"Comanda",KITCHEN_TICKET:"Produção",ORDER_ITEM:"Item",SALE:"Venda",QUICK_SALE_PENDING:"Pendência de venda",PRODUCT:"Produto",STOCK_POOL:"Estoque",TABLE:"Mesa",TABLE_COMBINATION:"Combinação de mesas",USER:"Usuário",STAFF_MEMBER:"Funcionário",CUSTOMER:"Cliente",PAYMENT:"Pagamento",SESSION:"Acesso",SYSTEM:"Sistema",EVENT:"Evento",
+  CASH:"Caixa",COMMAND:"Comanda",KITCHEN_TICKET:"Produção",ORDER_ITEM:"Item",SALE:"Venda",QUICK_SALE_PENDING:"Pendência de venda",DELIVERY:"Delivery",PRODUCT:"Produto",STOCK_POOL:"Estoque",TABLE:"Mesa",TABLE_COMBINATION:"Combinação de mesas",USER:"Usuário",STAFF_MEMBER:"Funcionário",CUSTOMER:"Cliente",PAYMENT:"Pagamento",SESSION:"Acesso",SYSTEM:"Sistema",EVENT:"Evento",
 };
 
 const movementConfig = [
   ["LOGIN","Entrada no sistema"],["LOGOUT","Saída do sistema"],["COMMAND_OPENED","Abrir comanda"],["COMMAND_CANCELLED","Cancelar comanda"],
   ["COMMAND_PRIORITY_SET","Adicionar prioridade"],["COMMAND_PRIORITY_REMOVED","Remover prioridade"],
   ["ITEM_ADDED","Adicionar item à comanda"],["ITEM_REMOVED","Excluir item da comanda"],["KITCHEN_SENT","Enviar para a cozinha"],["KITCHEN_STATUS_UPDATED","Atualizar preparo da cozinha"],
-  ["SALE_COMPLETED","Fechar comanda/venda"],["QUICK_SALE_COMPLETED","Concluir venda rápida"],["QUICK_SALE_PENDING_DISCARDED","Descartar pendência de venda"],["SALE_CANCELLED","Cancelar venda"],["SALE_MOVEMENT_UPDATED","Manutenção de movimento"],["CASH_OPENED","Abrir caixa"],["CASH_CLOSED","Fechar caixa"],
+  ["SALE_COMPLETED","Fechar comanda/venda"],["QUICK_SALE_COMPLETED","Concluir venda rápida"],["QUICK_SALE_PENDING_DISCARDED","Descartar pendência de venda"],["DELIVERY_ORDER_CREATED","Criar pedido de delivery"],["DELIVERY_APP_CODE_UPDATED","Atualizar código do aplicativo"],["DELIVERY_READY","Pedido pronto para retirada"],["DELIVERY_PICKUP_CODE_FAILED","Recusar código de retirada"],["DELIVERY_COLLECTED","Confirmar retirada"],["DELIVERY_CANCELLED","Cancelar delivery"],["SALE_CANCELLED","Cancelar venda"],["SALE_MOVEMENT_UPDATED","Manutenção de movimento"],["CASH_OPENED","Abrir caixa"],["CASH_CLOSED","Fechar caixa"],
   ["PRODUCT_CREATED","Cadastrar produto"],["PRODUCT_UPDATED","Alterar produto"],["PRODUCT_FINANCE_UPDATED","Alterar custo e margem"],["PRODUCT_DELETED","Excluir produto"],["STOCK_ADJUSTED","Ajustar estoque"],["DRAFT_KEG_ADDED","Adicionar galão de chopp"],["TABLE_CREATED","Cadastrar mesa"],["TABLE_UPDATED","Alterar mesa"],["TABLES_COMBINED","Combinar mesas"],["TABLES_UNCOMBINED","Desfazer combinação"],["USER_CREATED","Cadastrar usuário"],
   ["USER_STATUS_CHANGED","Ativar ou inativar usuário"],["STAFF_MEMBER_CREATED","Cadastrar funcionário"],["STAFF_MEMBER_STATUS_CHANGED","Ativar ou inativar funcionário"],["STAFF_VOUCHER_SETTLED","Quitar vale de funcionário"],["PASSWORD_CHANGED","Alterar senha"],["PERMISSIONS_UPDATED","Alterar permissões"],["EVENT_CREATED","Cadastrar evento"],["EVENT_UPDATED","Alterar evento"],["EVENT_DELETED","Excluir evento"],
 ] as const;

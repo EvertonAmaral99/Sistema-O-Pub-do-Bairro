@@ -52,21 +52,21 @@ function validDraftId(value:unknown){
   return Number.isSafeInteger(id)&&id>0?id:null;
 }
 
-export function QuickSaleWorkspace({products,staffMembers,customers,cashOpen,userId,initialDraft,forceNew=false}:{products:CommandProduct[];staffMembers:StaffMemberOption[];customers:CustomerOption[];cashOpen:boolean;userId:number;initialDraft:QuickSalePendingDraft|null;forceNew?:boolean}){
+export function QuickSaleWorkspace({products,staffMembers,customers,cashOpen,userId,initialDraft,forceNew=false,startAsDelivery=false}:{products:CommandProduct[];staffMembers:StaffMemberOption[];customers:CustomerOption[];cashOpen:boolean;userId:number;initialDraft:QuickSalePendingDraft|null;forceNew?:boolean;startAsDelivery?:boolean}){
   const router=useRouter();
   const storageKey=`pub-quick-sale-pending-active-v2:${userId}`;
   const legacyStorageKey=`pub-quick-sale-draft-v1:${userId}`;
   const initialDraftRef=useRef(initialDraft);
   const initialProductsRef=useRef(products);
   const draftIdRef=useRef<number|null>(initialDraft?.id??null);
-  const checkoutDraftRef=useRef<QuickSaleCheckoutDraft>(normalizeQuickSaleCheckoutDraft(initialDraft?.checkoutState));
+  const checkoutDraftRef=useRef<QuickSaleCheckoutDraft>(normalizeQuickSaleCheckoutDraft(initialDraft?.checkoutState??(startAsDelivery?{fulfillmentType:"APP_PICKUP"}:null)));
   const saveQueueRef=useRef<Promise<void>>(Promise.resolve());
   const saveRevisionRef=useRef(0);
   const finalizingRef=useRef(false);
   const [query,setQuery]=useState("");
   const [cart,setCart]=useState<CartItem[]>(()=>normalizeCart(initialDraft?.items,products));
   const [draftId,setDraftId]=useState<number|null>(initialDraft?.id??null);
-  const [checkoutDraft,setCheckoutDraft]=useState<QuickSaleCheckoutDraft>(()=>normalizeQuickSaleCheckoutDraft(initialDraft?.checkoutState));
+  const [checkoutDraft,setCheckoutDraft]=useState<QuickSaleCheckoutDraft>(()=>normalizeQuickSaleCheckoutDraft(initialDraft?.checkoutState??(startAsDelivery?{fulfillmentType:"APP_PICKUP"}:null)));
   const [paymentFormKey,setPaymentFormKey]=useState(0);
   const [draftReady,setDraftReady]=useState(false);
   const [draftStatus,setDraftStatus]=useState<DraftStatus>("restoring");
@@ -104,6 +104,7 @@ export function QuickSaleWorkspace({products,staffMembers,customers,cashOpen,use
         if(draftIdRef.current!==nextDraftId){draftIdRef.current=nextDraftId;setDraftId(nextDraftId);}
         const url=new URL(window.location.href);
         url.searchParams.delete("nova");
+        url.searchParams.delete("tipo");
         if(nextDraftId!==null)url.searchParams.set("rascunho",String(nextDraftId));else url.searchParams.delete("rascunho");
         window.history.replaceState(window.history.state,"",url);
         if(revision===saveRevisionRef.current){
@@ -128,7 +129,7 @@ export function QuickSaleWorkspace({products,staffMembers,customers,cashOpen,use
     const serverDraft=initialDraftRef.current;
     let restoredDraftId=serverDraft?.id??null;
     let restoredCart=normalizeCart(serverDraft?.items,initialProductsRef.current);
-    let restoredCheckout=normalizeQuickSaleCheckoutDraft(serverDraft?.checkoutState);
+    let restoredCheckout=normalizeQuickSaleCheckoutDraft(serverDraft?.checkoutState??(forceNew&&startAsDelivery?{fulfillmentType:"APP_PICKUP"}:null));
     try{
       const localDraft=forceNew?null:window.localStorage.getItem(storageKey);
       if(localDraft){
@@ -153,7 +154,7 @@ export function QuickSaleWorkspace({products,staffMembers,customers,cashOpen,use
     setPaymentFormKey((current)=>current+1);
     setDraftReady(true);
     setDraftStatus(window.navigator.onLine?"saving":"local");
-  },[forceNew,legacyStorageKey,storageKey]);
+  },[forceNew,legacyStorageKey,startAsDelivery,storageKey]);
 
   useEffect(()=>{
     const retrySync=()=>{setDraftStatus("saving");setDraftMessage("");setSyncAttempt((current)=>current+1);};
