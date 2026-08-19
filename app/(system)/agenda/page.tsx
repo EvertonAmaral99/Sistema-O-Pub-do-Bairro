@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CalendarPlus, ChevronLeft, ChevronRight, Clock } from "lucide-react";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { formatMoney } from "@/lib/format";
 
@@ -10,7 +10,7 @@ const weekDays=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 function monthShift(year:number,month:number,offset:number){const date=new Date(Date.UTC(year,month-1+offset,1));return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}`;}
 
 export default async function AgendaPage({searchParams}:{searchParams:Promise<{mes?:string}>}){
-  await requireRole(["ADMIN","MANAGER"]);
+  await requirePermission("AGENDA");
   const params=await searchParams;
   const today=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Sao_Paulo"}).format(new Date());
   const monthValue=/^\d{4}-(0[1-9]|1[0-2])$/.test(params.mes??"")?params.mes!:today.slice(0,7);

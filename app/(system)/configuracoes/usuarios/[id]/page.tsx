@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { updateUserPermissionsAction } from "@/app/system-actions";
 import { requireRole } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { isManagementRole, permissionConfig, roleLabel, type Permission, type Role } from "@/lib/roles";
+import { isManagementPermission, isManagementRole, permissionConfig, roleLabel, type Permission, type Role } from "@/lib/roles";
 
 type ManagedUser = {
   id:number;
@@ -37,7 +37,7 @@ export default async function EditUserPermissionsPage({ params,searchParams }:{ 
       {!managedUser.active?<div className="permission-lock"><UserRoundX size={17}/><span>Ative este funcionário na tela anterior antes de alterar os acessos.</span></div>:managedUser.role==="ADMIN"?<><div className="permission-lock"><ShieldCheck size={17}/><span>Administradores possuem acesso completo.</span></div><div className="permission-grid permission-grid-readonly">{permissionConfig.map((permission)=><div className="permission-option permission-protected" key={permission.key}><ShieldCheck size={16}/><span><strong>{permission.label}</strong><small>Acesso ativo para Administrador.</small></span></div>)}</div></>:hierarchyLocked?<div className="permission-lock"><ShieldCheck size={17}/><span>Somente um Administrador pode alterar os acessos de outro Gerente.</span></div>:<form action={updateUserPermissionsAction} className="permission-form">
         <input type="hidden" name="userId" value={managedUser.id}/><input type="hidden" name="returnTo" value={`/configuracoes/usuarios/${managedUser.id}`}/>
         <div className="permission-grid">{permissionConfig.map((permission)=>{
-          const managementOnly="managementOnly" in permission&&permission.managementOnly;
+          const managementOnly=isManagementPermission(permission.key);
           if(managementOnly&&!isManagementRole(managedUser.role)) return <div className="permission-option permission-protected" key={permission.key}><ShieldCheck size={16}/><span><strong>{permission.label}</strong><small>Disponível somente para os perfis Gerente e Administrador.</small></span></div>;
           return <label className="permission-option" key={permission.key}><input type="checkbox" name="permissions" value={permission.key} defaultChecked={managedUser.permissions.includes(permission.key)}/><span><strong>{permission.label}</strong><small>{permission.description}</small></span></label>;
         })}</div>

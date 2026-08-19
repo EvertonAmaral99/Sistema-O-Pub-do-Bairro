@@ -6,10 +6,11 @@ import { redirect } from "next/navigation";
 import { auditLog } from "@/lib/audit";
 import { hashPassword, requirePermission, requireRole, requireUser, verifyPassword } from "@/lib/auth";
 import { transaction } from "@/lib/db";
-import { canManageCommand, defaultPermissionsByRole, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
+import { canManageCommand, defaultPermissionsByRole, isManagementPermission, isManagementRole, isPermission, permissionConfig, type Role } from "@/lib/roles";
 import { commandLabel, saleReferenceLabel } from "@/lib/command-label";
 import { courierText, deliveryOrderLabel } from "@/lib/delivery";
 import { normalizeQuickSaleCheckoutDraft, quickSalePendingLabel } from "@/lib/quick-sale-draft";
+import { isPaymentMethod, type PaymentMethod } from "@/lib/payments";
 
 type CommandAuditRecord = { command_number:number|null; command_name:string|null; display_label:string };
 
@@ -38,9 +39,8 @@ function productName(value: FormDataEntryValue | null) {
 function cpfValue(value: FormDataEntryValue | null) {
   return String(value ?? "").replace(/\D/g, "");
 }
-type SalePaymentMethod="CASH"|"PIX"|"DEBIT"|"CREDIT"|"STAFF_VOUCHER"|"STORE_CREDIT";
+type SalePaymentMethod=PaymentMethod;
 type SalePaymentAllocation={method:SalePaymentMethod;amountCents:number;staffMemberId?:number;customerId?:number};
-const salePaymentMethods=new Set<SalePaymentMethod>(["CASH","PIX","DEBIT","CREDIT","STAFF_VOUCHER","STORE_CREDIT"]);
 function paymentAllocationsValue(formData:FormData):SalePaymentAllocation[]{
   const raw=String(formData.get("paymentAllocations")??"").trim();
   if(!raw){
@@ -56,7 +56,7 @@ function paymentAllocationsValue(formData:FormData):SalePaymentAllocation[]{
     const source=entry as Record<string,unknown>;
     const method=String(source.method??"") as SalePaymentMethod;
     const amountCents=Math.trunc(Number(source.amountCents));
-    if(!salePaymentMethods.has(method)||!Number.isSafeInteger(amountCents)||amountCents<=0||amountCents>2147483647) throw new Error("Um dos pagamentos está inválido.");
+    if(!isPaymentMethod(method)||!Number.isSafeInteger(amountCents)||amountCents<=0||amountCents>2147483647) throw new Error("Um dos pagamentos está inválido.");
     const staffMemberId=Math.trunc(Number(source.staffMemberId));
     const customerId=Math.trunc(Number(source.customerId));
     if(method==="STAFF_VOUCHER"&&(!Number.isSafeInteger(staffMemberId)||staffMemberId<1)) throw new Error("Selecione o funcionário responsável pelo vale.");
@@ -94,7 +94,7 @@ function quickSaleItemsValue(formData:FormData):QuickSaleItemInput[]{
 }
 
 export async function saveQuickSaleDraftAction(formData:FormData):Promise<{success?:boolean;draftId?:number|null;error?:string}>{
-  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const user=await requirePermission("QUICK_SALES");
   let items:QuickSaleItemInput[]=[];
   let checkoutState=normalizeQuickSaleCheckoutDraft(null);
   const draftIdRaw=String(formData.get("quickSaleDraftId")??"").trim();
@@ -133,7 +133,7 @@ export async function saveQuickSaleDraftAction(formData:FormData):Promise<{succe
 }
 
 export async function discardQuickSalePendingAction(formData:FormData){
-  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const user=await requirePermission("QUICK_SALE_PENDING");
   const draftId=positiveId(formData.get("quickSaleDraftId"));
   try{
     await transaction(async(client)=>{
@@ -174,7 +174,7 @@ async function readProductImage(value: FormDataEntryValue | null) {
 }
 
 export async function openCashAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
+  const user = await requirePermission("CASH");
   const openingAmount = cents(formData.get("openingAmount"));
   try {
     await transaction(async (client) => {
@@ -228,7 +228,7 @@ export async function addCustomerCreditAction(formData:FormData){
 }
 
 export async function createStaffMemberAction(formData:FormData){
-  const user=await requireRole(["ADMIN","MANAGER"]);
+  const user=await requirePermission("STAFF");
   const name=String(formData.get("name")??"").trim().replace(/\s+/g," ");
   const cpf=cpfValue(formData.get("cpf"))||null;
   const contact=String(formData.get("contact")??"").trim()||null;
@@ -250,7 +250,7 @@ export async function createStaffMemberAction(formData:FormData){
 }
 
 export async function toggleStaffMemberStatusAction(formData:FormData){
-  const user=await requireRole(["ADMIN","MANAGER"]);
+  const user=await requirePermission("STAFF");
   const staffMemberId=positiveId(formData.get("staffMemberId"));
   const nextActive=formData.get("nextActive")==="true";
   try{
@@ -267,7 +267,7 @@ export async function toggleStaffMemberStatusAction(formData:FormData){
 }
 
 export async function settleStaffVoucherAction(formData:FormData){
-  const user=await requireRole(["ADMIN","MANAGER"]);
+  const user=await requirePermission("PENDING_PAYMENTS");
   const paymentId=positiveId(formData.get("paymentId"));
   const settlementType=String(formData.get("settlementType")??"");
   const note=String(formData.get("note")??"").trim()||null;
@@ -286,7 +286,7 @@ export async function settleStaffVoucherAction(formData:FormData){
 }
 
 export async function updateSaleMovementAction(formData:FormData):Promise<{error?:string;success?:boolean}>{
-  const user=await requireRole(["ADMIN","MANAGER"]);
+  const user=await requirePermission("MOVEMENT_MAINTENANCE");
   let saleId=0;
   let paymentAllocations:SalePaymentAllocation[]=[];
   try{
@@ -368,7 +368,7 @@ export async function updateSaleMovementAction(formData:FormData):Promise<{error
 }
 
 export async function closeCashAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
+  const user = await requirePermission("CASH");
   const cashId = positiveId(formData.get("cashId"));
   const format = String(formData.get("format") ?? "80");
   const closingAmount = cents(formData.get("closingAmount"));
@@ -696,7 +696,7 @@ export async function closeCommandAction(formData: FormData) {
 }
 
 export async function quickSaleAction(formData:FormData):Promise<{url?:string;error?:string}>{
-  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const user=await requirePermission("QUICK_SALES");
   const format=String(formData.get("format")??"80");
   const quickSaleDraftIdRaw=String(formData.get("quickSaleDraftId")??"").trim();
   const quickSaleDraftId=quickSaleDraftIdRaw?Math.trunc(Number(quickSaleDraftIdRaw)):null;
@@ -717,10 +717,8 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
   const guestCustomerName=String(formData.get("guestCustomerName")??"").trim().replace(/\s+/g," ");
   const fulfillmentType=String(formData.get("fulfillmentType")??"COUNTER");
   if(!["COUNTER","APP_PICKUP"].includes(fulfillmentType)) return{error:"O tipo de atendimento informado é inválido."};
-  let courierAppName="";
   let courierAppCode="";
   try{
-    courierAppName=courierText(formData.get("courierAppName"),60);
     courierAppCode=courierText(formData.get("courierAppCode"),40);
   }catch(error){return{error:error instanceof Error?error.message:"Os dados da retirada por aplicativo estão inválidos."};}
   if(requestedCustomerId!==null&&(!Number.isSafeInteger(requestedCustomerId)||requestedCustomerId<1)) return{error:"O cliente selecionado está inválido."};
@@ -856,13 +854,13 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
         const initialStatus=kitchenItemIds.length>0?"PREPARING":"READY";
         for(let attempt=0;attempt<40;attempt+=1){
           const pickupCode=randomInt(0,10000).toString().padStart(4,"0");
-          const createdDelivery=await client.query<{id:number}>(`INSERT INTO delivery_orders (sale_id,pickup_code,courier_app_name,courier_app_code,status,created_by,ready_at,ready_by)
-            VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6::bigint,CASE WHEN $5='READY' THEN NOW() ELSE NULL END,CASE WHEN $5='READY' THEN $6::bigint ELSE NULL::bigint END)
-            ON CONFLICT DO NOTHING RETURNING id`,[sale.rows[0].id,pickupCode,courierAppName,courierAppCode,initialStatus,user.id]);
+          const createdDelivery=await client.query<{id:number}>(`INSERT INTO delivery_orders (sale_id,pickup_code,courier_app_name,courier_app_code,courier_app_code_not_required,status,created_by,ready_at,ready_by)
+            VALUES ($1::bigint,$2::text,NULL,NULLIF($3::text,''),FALSE,$4::text,$5::bigint,CASE WHEN $4::text='READY' THEN NOW() ELSE NULL END,CASE WHEN $4::text='READY' THEN $5::bigint ELSE NULL::bigint END)
+            ON CONFLICT DO NOTHING RETURNING id`,[sale.rows[0].id,pickupCode,courierAppCode,initialStatus,user.id]);
           if(createdDelivery.rows[0]){deliveryId=Number(createdDelivery.rows[0].id);break;}
         }
         if(deliveryId===null)throw new Error("Não foi possível gerar um código de retirada. Tente finalizar novamente.");
-        await auditLog({userId:user.id,action:"DELIVERY_ORDER_CREATED",entityType:"DELIVERY",entityId:deliveryId,description:`Criou o pedido ${deliveryOrderLabel(deliveryId)} para retirada por aplicativo.`,metadata:{saleId:Number(sale.rows[0].id),commandId,status:initialStatus,hasCourierAppCode:Boolean(courierAppCode),courierAppName:courierAppName||null}},client);
+        await auditLog({userId:user.id,action:"DELIVERY_ORDER_CREATED",entityType:"DELIVERY",entityId:deliveryId,description:`Criou o pedido ${deliveryOrderLabel(deliveryId)} para retirada por aplicativo.`,metadata:{saleId:Number(sale.rows[0].id),commandId,status:initialStatus,courierAppCodeState:courierAppCode?"INFORMED":"PENDING"}},client);
       }
       await auditLog({userId:user.id,action:"QUICK_SALE_COMPLETED",entityType:"SALE",entityId:sale.rows[0].id,description:`Finalizou a venda rápida #${sale.rows[0].id} por ${moneyText(total)}.`,metadata:{commandId,customerId:saleCustomerId,customerName:saleCustomerName,customerCreated,customerWithoutRegistration:saleCustomerId===null&&Boolean(saleCustomerName),subtotal,discount,service,total,splitCount,kitchenItems:kitchenItemIds.length,fulfillmentType,deliveryId,items:products.rows.map((product)=>({productId:Number(product.id),productName:product.name,quantity:quantitiesByProduct.get(Number(product.id))||0})),payments:paymentAllocations.map(({method,amountCents,staffMemberId,customerId})=>({method,amountCents,staffMemberId,customerId}))}},client);
       if(quickSaleDraftId!==null) await client.query("DELETE FROM quick_sale_pending_orders WHERE id=$1",[quickSaleDraftId]);
@@ -886,27 +884,29 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
 }
 
 export async function saveDeliveryAppCodeAction(formData:FormData){
-  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const user=await requirePermission("DELIVERY");
   const deliveryId=positiveId(formData.get("deliveryId"));
-  let courierAppName="";
+  const codeMode=String(formData.get("codeMode")??"");
+  if(!["CODE","NONE"].includes(codeMode))fail("/delivery","Escolha salvar o código ou marcar o pedido como sem código.");
   let courierAppCode="";
   try{
-    courierAppName=courierText(formData.get("courierAppName"),60);
     courierAppCode=courierText(formData.get("courierAppCode"),40);
   }catch(error){fail("/delivery",error instanceof Error?error.message:"Os dados do aplicativo estão inválidos.");}
+  if(codeMode==="CODE"&&!courierAppCode)fail("/delivery","Informe o código do aplicativo ou use o botão “Marcar sem código”.");
+  const codeNotRequired=codeMode==="NONE";
   try{
     await transaction(async(client)=>{
-      const updated=await client.query<{id:number}>("UPDATE delivery_orders SET courier_app_name=NULLIF($1,''),courier_app_code=NULLIF($2,''),updated_at=NOW() WHERE id=$3 AND status IN ('PREPARING','READY') RETURNING id",[courierAppName,courierAppCode,deliveryId]);
+      const updated=await client.query<{id:number}>("UPDATE delivery_orders SET courier_app_name=NULL,courier_app_code=$1::text,courier_app_code_not_required=$2::boolean,updated_at=NOW() WHERE id=$3::bigint AND status IN ('PREPARING','READY') RETURNING id",[codeNotRequired?null:courierAppCode,codeNotRequired,deliveryId]);
       if(!updated.rows[0])throw new Error("Esse pedido não está mais disponível para alteração.");
-      await auditLog({userId:user.id,action:"DELIVERY_APP_CODE_UPDATED",entityType:"DELIVERY",entityId:deliveryId,description:`Atualizou os dados do motoboy no pedido ${deliveryOrderLabel(deliveryId)}.`,metadata:{courierAppName:courierAppName||null,hasCourierAppCode:Boolean(courierAppCode)}},client);
+      await auditLog({userId:user.id,action:"DELIVERY_APP_CODE_UPDATED",entityType:"DELIVERY",entityId:deliveryId,description:codeNotRequired?`Marcou o pedido ${deliveryOrderLabel(deliveryId)} como sem código do aplicativo.`:`Registrou o código do aplicativo no pedido ${deliveryOrderLabel(deliveryId)}.`,metadata:{courierAppCodeState:codeNotRequired?"NOT_REQUIRED":"INFORMED"}},client);
     });
   }catch(error){fail("/delivery",error instanceof Error?error.message:"Não foi possível salvar o código do aplicativo.");}
   revalidatePath("/delivery");
-  redirect(`/delivery?codigo=salvo&pedido=${deliveryId}`);
+  redirect(`/delivery?codigo=${codeNotRequired?"sem-codigo":"salvo"}&pedido=${deliveryId}`);
 }
 
 export async function confirmDeliveryPickupAction(formData:FormData){
-  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const user=await requirePermission("DELIVERY");
   const deliveryId=positiveId(formData.get("deliveryId"));
   const pickupCode=String(formData.get("pickupCode")??"").trim();
   if(!/^\d{4}$/.test(pickupCode))fail("/delivery","Digite exatamente os 4 números informados pelo motoboy.");
@@ -914,7 +914,7 @@ export async function confirmDeliveryPickupAction(formData:FormData){
     const reference=await client.query<{command_id:number}>("SELECT s.command_id FROM delivery_orders d JOIN sales s ON s.id=d.sale_id WHERE d.id=$1",[deliveryId]);
     if(!reference.rows[0])return{success:false,error:"Pedido de delivery não encontrado."};
     const items=await client.query<{destination:string;status:string}>("SELECT destination,status FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' ORDER BY id FOR UPDATE",[reference.rows[0].command_id]);
-    const delivery=await client.query<{id:number;pickup_code:string;courier_app_code:string|null;status:string;failed_attempts:number;locked:boolean;sale_id:number}>(`SELECT d.id,d.pickup_code,d.courier_app_code,d.status,d.failed_attempts,d.sale_id,
+    const delivery=await client.query<{id:number;pickup_code:string;courier_app_code:string|null;courier_app_code_not_required:boolean;status:string;failed_attempts:number;locked:boolean;sale_id:number}>(`SELECT d.id,d.pickup_code,d.courier_app_code,d.courier_app_code_not_required,d.status,d.failed_attempts,d.sale_id,
       (d.failed_attempts>=5 AND d.last_failed_at>NOW()-INTERVAL '5 minutes') AS locked
       FROM delivery_orders d JOIN sales s ON s.id=d.sale_id WHERE d.id=$1 AND s.status='COMPLETED' FOR UPDATE OF d`,[deliveryId]);
     const order=delivery.rows[0];
@@ -925,7 +925,7 @@ export async function confirmDeliveryPickupAction(formData:FormData){
       await client.query("UPDATE delivery_orders SET status='PREPARING',ready_at=NULL,ready_by=NULL,updated_at=NOW() WHERE id=$1",[deliveryId]);
       return{success:false,error:"Ainda existem itens da cozinha em preparo. A retirada não foi autorizada."};
     }
-    if(!order.courier_app_code)return{success:false,error:"Salve primeiro o código do aplicativo informado pelo cliente."};
+    if(!order.courier_app_code&&!order.courier_app_code_not_required)return{success:false,error:"Informe o código do aplicativo ou marque o pedido como sem código antes da retirada."};
     if(order.locked)return{success:false,error:"Muitas tentativas incorretas. Aguarde 5 minutos antes de tentar novamente."};
     if(order.pickup_code!==pickupCode){
       const failed=await client.query<{failed_attempts:number}>(`UPDATE delivery_orders SET failed_attempts=CASE WHEN last_failed_at IS NULL OR last_failed_at<NOW()-INTERVAL '5 minutes' THEN 1 ELSE failed_attempts+1 END,last_failed_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING failed_attempts`,[deliveryId]);
@@ -1125,7 +1125,8 @@ export async function updateProductFinancialsAction(formData:FormData){
 }
 
 export async function deleteProductAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
+  const user = await requirePermission("PRODUCTS");
+  if(!isManagementRole(user.role)) fail("/produtos","Somente Gerentes e Administradores podem excluir produtos.");
   const productId = positiveId(formData.get("productId"));
   try {
     await transaction(async (client) => {
@@ -1274,7 +1275,7 @@ export async function updateUserPermissionsAction(formData: FormData) {
       if (!target.rows[0]) throw new Error("Funcionário não encontrado.");
       if (target.rows[0].role === "ADMIN") throw new Error("O acesso de Administradores é sempre completo.");
       if (actor.role === "MANAGER" && target.rows[0].role === "MANAGER") throw new Error("Somente Administradores podem alterar outro Gerente.");
-      const allowed = isManagementRole(target.rows[0].role) ? selected : selected.filter((permission) => !["CASH","FINANCE","REPORTS"].includes(permission));
+      const allowed = isManagementRole(target.rows[0].role) ? selected : selected.filter((permission) => !isManagementPermission(permission));
       await client.query("DELETE FROM user_permissions WHERE user_id=$1", [userId]);
       for (const permission of allowed) await client.query("INSERT INTO user_permissions (user_id,permission) VALUES ($1,$2)", [userId, permission]);
       const labels = permissionConfig.filter((item) => allowed.includes(item.key)).map((item) => item.label);
@@ -1298,7 +1299,7 @@ function eventFields(formData: FormData) {
 }
 
 export async function createEventAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
+  const user = await requirePermission("AGENDA");
   let eventDate = "";
   try {
     const fields = eventFields(formData); eventDate = fields.eventDate;
@@ -1312,7 +1313,7 @@ export async function createEventAction(formData: FormData) {
 }
 
 export async function updateEventAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
+  const user = await requirePermission("AGENDA");
   const eventId = positiveId(formData.get("eventId"));
   let eventMonth = "";
   try {
@@ -1329,7 +1330,7 @@ export async function updateEventAction(formData: FormData) {
 }
 
 export async function deleteEventAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
+  const user = await requirePermission("AGENDA");
   const eventId = positiveId(formData.get("eventId"));
   try {
     await transaction(async (client) => {
@@ -1343,14 +1344,17 @@ export async function deleteEventAction(formData: FormData) {
 }
 
 export async function cancelSaleAction(formData: FormData) {
-  const user = await requireRole(["ADMIN","MANAGER"]);
+  const user = await requirePermission("MOVEMENT_MAINTENANCE");
   const saleId = positiveId(formData.get("saleId"));
   const reason = String(formData.get("reason") ?? "").trim();
-  if (reason.length < 4) fail("/relatorios", "Informe o motivo do cancelamento.");
+  if (reason.length < 4) fail("/manutencao-movimento", "Informe o motivo do cancelamento.");
+  if (reason.length > 240) fail("/manutencao-movimento", "O motivo do cancelamento deve ter no máximo 240 caracteres.");
   try {
     await transaction(async (client) => {
       const sale = await client.query<{ command_id:number;status:string;total_cents:number;command_number:number|null;command_name:string|null;sale_channel:string;display_label:string }>("SELECT s.command_id,s.status,s.total_cents,c.command_number,c.command_name,c.sale_channel,cl.display_label FROM sales s JOIN commands c ON c.id=s.command_id JOIN command_locations cl ON cl.command_id=c.id WHERE s.id=$1 FOR UPDATE OF s", [saleId]);
       if (!sale.rows[0] || sale.rows[0].status !== "COMPLETED") throw new Error("Venda não pode ser cancelada.");
+      const settledVoucher=await client.query("SELECT 1 FROM payments WHERE sale_id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='SETTLED' AND voided_at IS NULL LIMIT 1 FOR UPDATE",[saleId]);
+      if(settledVoucher.rows[0])throw new Error("Esta venda possui um vale de funcionário já quitado e não pode ser cancelada.");
       const items = await client.query<{ id:number;product_id:number;stock_pool_id:number;stock_quantity_used:number|string }>("SELECT id,product_id,stock_pool_id,stock_quantity_used FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' FOR UPDATE", [sale.rows[0].command_id]);
       for (const item of items.rows) {
         if (Number(item.stock_quantity_used) <= 0) continue;
@@ -1371,7 +1375,7 @@ export async function cancelSaleAction(formData: FormData) {
       if(cancelledDelivery.rows[0])await auditLog({userId:user.id,action:"DELIVERY_CANCELLED",entityType:"DELIVERY",entityId:cancelledDelivery.rows[0].id,description:`Cancelou o pedido ${deliveryOrderLabel(cancelledDelivery.rows[0].id)} junto com a venda #${saleId}.`,metadata:{saleId,reason}},client);
       await auditLog({ userId:user.id, action:"SALE_CANCELLED", entityType:"SALE", entityId:saleId, description:`Cancelou a venda #${saleId}, ${saleReferenceLabel({...sale.rows[0],table_display:sale.rows[0].display_label})}, de ${moneyText(Number(sale.rows[0].total_cents))}. Motivo: ${reason}`, metadata:{ reason, commandId:sale.rows[0].command_id, commandNumber:sale.rows[0].command_number, commandName:sale.rows[0].command_name, saleChannel:sale.rows[0].sale_channel, table:sale.rows[0].display_label } }, client);
     });
-  } catch (error) { fail("/relatorios", error instanceof Error ? error.message : "Não foi possível cancelar a venda."); }
+  } catch (error) { fail("/manutencao-movimento", error instanceof Error ? error.message : "Não foi possível cancelar a venda."); }
   revalidatePath("/relatorios");
   revalidatePath("/manutencao-movimento");
   revalidatePath("/estoque");
@@ -1382,5 +1386,5 @@ export async function cancelSaleAction(formData: FormData) {
   revalidatePath("/clientes");
   revalidatePath("/pendencias");
   revalidatePath("/delivery");
-  redirect("/relatorios");
+  redirect(`/manutencao-movimento?sucesso=cancelada&pedido=${saleId}`);
 }

@@ -1,5 +1,5 @@
 import { settleStaffVoucherAction } from "@/app/system-actions";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { saleReferenceLabel } from "@/lib/command-label";
@@ -7,7 +7,7 @@ import { saleReferenceLabel } from "@/lib/command-label";
 type VoucherRow={id:number;sale_id:number;amount_cents:number;staff_member_name:string;staff_position:string|null;created_at:string;command_number:number|null;command_name:string|null;sale_channel:string;table_display:string;settlement_type:string|null;settled_at:string|null;settled_by_name:string|null};
 
 export default async function PendingPaymentsPage({searchParams}:{searchParams:Promise<{erro?:string;sucesso?:string}>}){
-  await requireRole(["ADMIN","MANAGER"]);
+  await requirePermission("PENDING_PAYMENTS");
   const params=await searchParams;
   const [pending,settled]=await Promise.all([
     query<VoucherRow>(`SELECT p.id,p.sale_id,p.amount_cents,COALESCE(sm.name,p.staff_member_name,'Funcionário não informado') AS staff_member_name,sm.position AS staff_position,p.created_at,c.command_number,c.command_name,c.sale_channel,cl.display_label AS table_display,NULL::text AS settlement_type,NULL::timestamptz AS settled_at,NULL::text AS settled_by_name FROM payments p JOIN sales s ON s.id=p.sale_id JOIN commands c ON c.id=s.command_id JOIN command_locations cl ON cl.command_id=c.id LEFT JOIN staff_members sm ON sm.id=p.staff_member_id WHERE p.method='STAFF_VOUCHER' AND p.staff_voucher_status='PENDING' AND p.voided_at IS NULL AND s.status='COMPLETED' ORDER BY p.created_at`),

@@ -2,9 +2,10 @@ import Link from "next/link";
 import { FileClock, Play, Plus, Trash2 } from "lucide-react";
 import { discardQuickSalePendingAction } from "@/app/system-actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { paymentMethodLabel } from "@/lib/payments";
 import { normalizeQuickSaleCheckoutDraft, quickSalePendingLabel, type QuickSaleCheckoutDraft } from "@/lib/quick-sale-draft";
 
 export const dynamic="force-dynamic";
@@ -13,8 +14,6 @@ type PendingOrderRow={id:number;items:unknown;checkout_state:unknown;created_at:
 type ProductRow={id:number;name:string;price_cents:number};
 type CustomerRow={id:number;name:string};
 type PendingItem={productId:number;quantity:number};
-
-const paymentLabels={CASH:"Dinheiro",PIX:"PIX",DEBIT:"Cartão de débito",CREDIT:"Cartão de crédito",STAFF_VOUCHER:"Vale funcionário",STORE_CREDIT:"Crédito em loja"} as const;
 
 function pendingItems(value:unknown):PendingItem[]{
   if(!Array.isArray(value))return[];
@@ -39,11 +38,11 @@ function paymentLabel(draft:QuickSaleCheckoutDraft){
   if(draft.paymentMode==="MIXED")return"Pagamento misto";
   const people=Math.min(50,Math.max(1,Math.trunc(Number(draft.splitCount)||1)));
   if(people>1)return`Dividido entre ${people} pessoas`;
-  return draft.paymentMethod?paymentLabels[draft.paymentMethod]:"Não informado";
+  return draft.paymentMethod?paymentMethodLabel(draft.paymentMethod):"Não informado";
 }
 
 export default async function PendingQuickSalesPage({searchParams}:{searchParams:Promise<{erro?:string;sucesso?:string}>}){
-  await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  await requirePermission("QUICK_SALE_PENDING");
   const params=await searchParams;
   const [orders,products,customers]=await Promise.all([
     query<PendingOrderRow>(`SELECT q.id,q.items,q.checkout_state,q.created_at,q.updated_at,

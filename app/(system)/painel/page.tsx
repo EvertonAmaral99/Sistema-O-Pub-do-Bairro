@@ -3,7 +3,7 @@ import { AlertTriangle, ChefHat, ClipboardList, WalletCards } from "lucide-react
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
-import { hasPermission, isManagementRole } from "@/lib/roles";
+import { hasPermission } from "@/lib/roles";
 import { DashboardCommandCard } from "@/components/dashboard-command-card";
 import { CommandCardIdentifier } from "@/components/command-card-identifier";
 import { PriorityInfo } from "@/components/priority-info";
@@ -11,7 +11,7 @@ import { PriorityInfo } from "@/components/priority-info";
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
   const user = await requirePermission("DASHBOARD");
   const canUseCommands = hasPermission(user, "COMMANDS");
-  const canViewFinance = isManagementRole(user.role);
+  const canViewFinance = hasPermission(user, "FINANCE");
   const { erro } = await searchParams;
   const [stats, commands] = await Promise.all([
     query<{ open_commands: string; predicted_total: string; low_stock: string; prep_items: string }>(`SELECT

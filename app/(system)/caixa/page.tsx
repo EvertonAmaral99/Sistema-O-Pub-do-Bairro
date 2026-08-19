@@ -1,12 +1,12 @@
 import { openCashAction } from "@/app/system-actions";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { CashClosingForm } from "@/components/cash-closing-form";
 import { saleReferenceLabel } from "@/lib/command-label";
 
 export default async function CashPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
-  await requireRole(["ADMIN","MANAGER"]);
+  await requirePermission("CASH");
   const { erro } = await searchParams;
   const current = await query<{ id:number; opening_amount_cents:number; opened_at:string; opened_by_name:string }>(`SELECT cs.id,cs.opening_amount_cents,cs.opened_at,u.name AS opened_by_name FROM cash_sessions cs JOIN users u ON u.id=cs.opened_by WHERE cs.status='OPEN' LIMIT 1`);
   const cash = current.rows[0];
