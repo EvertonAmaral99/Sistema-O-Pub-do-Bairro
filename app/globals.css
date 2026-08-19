@@ -138,10 +138,23 @@ tr:hover td { background:#fff3f4; }
 .badge-gray { background:#e9e5dd; color:#645f57; }
 
 .command-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(225px,1fr)); gap:14px; }
+.dashboard-stats { grid-template-columns:repeat(auto-fit,minmax(185px,1fr)); }
 .command-card { background:var(--panel); border:1px solid var(--line); border-left:5px solid var(--amber); border-radius:14px; padding:17px; transition:transform .15s ease; }
 .command-card:hover { transform:translateY(-2px); }
 .dashboard-command-card { position:relative; padding:0; }
 .dashboard-command-link { display:block; padding:17px; }
+.dashboard-delivery-card { padding:0; overflow:hidden; border-left-color:#367c9d; }
+.dashboard-delivery-card.ready { border-left-color:#3a8a62; }
+.dashboard-delivery-link { display:block; height:100%; padding:17px; }
+.dashboard-delivery-identifier { min-width:0; display:flex; align-items:center; gap:9px; }
+.dashboard-delivery-identifier > span:last-child { min-width:0; display:grid; gap:1px; }
+.dashboard-delivery-identifier strong { overflow-wrap:anywhere; color:var(--ink); font-size:13px; font-weight:900; }
+.dashboard-delivery-identifier small { color:var(--muted); font-size:11px; }
+.dashboard-delivery-icon { width:36px; height:36px; flex:0 0 36px; display:grid; place-items:center; border-radius:11px; background:#dceaf1; color:#2c607b; }
+.dashboard-delivery-icon svg { stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.dashboard-delivery-card.ready .dashboard-delivery-icon { background:#dcefe5; color:#236145; }
+.dashboard-delivery-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; color:var(--muted); font-size:12px; }
+.dashboard-delivery-footer .money { color:var(--ink); }
 .dashboard-priority-shortcut { position:absolute; z-index:3; right:12px; top:-10px; width:30px; height:30px; display:grid; place-items:center; border:1px solid #d7c5c7; border-radius:50%; background:#fffafa; color:#937f82; box-shadow:0 4px 12px rgba(70,20,26,.12); cursor:pointer; transition:.15s ease; }
 .dashboard-priority-shortcut:hover { color:var(--red); border-color:#d67a80; transform:scale(1.06); }
 .dashboard-priority-shortcut.active { color:#fff; border-color:var(--red); background:var(--red); }
@@ -637,6 +650,8 @@ tr:hover td { background:#fff3f4; }
   .command-table-choice-grid .table-choice small { font-size:11px; }
   .dashboard-command-card { padding:0; }
   .dashboard-command-link { padding:15px; }
+  .dashboard-delivery-card { padding:0; }
+  .dashboard-delivery-link { padding:15px; }
   .priority-dialog { padding:16px; }
   .priority-dialog .btn,.priority-dialog-remove { width:100%; }
   .product-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
