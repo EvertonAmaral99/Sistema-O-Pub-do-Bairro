@@ -673,6 +673,7 @@ export async function closeCommandAction(formData: FormData) {
       const cash = await client.query<{ id:number }>("SELECT id FROM cash_sessions WHERE status='OPEN' LIMIT 1 FOR UPDATE");
       if (!cash.rows[0]) throw new Error("Abra o caixa antes de finalizar a venda.");
       const sale = await client.query<{ id:number }>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,split_count,customer_id,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id", [commandId, cash.rows[0].id, subtotal, discount, service, total, splitCount, saleCustomerId, user.id]);
+      await client.query("UPDATE order_items SET sale_id=$1 WHERE command_id=$2 AND status<>'CANCELLED'",[sale.rows[0].id,commandId]);
       for(const payment of paymentAllocations){
         const staffMemberName=payment.staffMemberId?staffMembersById.get(payment.staffMemberId)??null:null;
         const createdPayment=await client.query<{id:number}>("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents,customer_id,staff_member_id,staff_member_name,staff_voucher_status) VALUES ($1,$2,$3,NULL,0,$4,$5,$6,$7) RETURNING id",[sale.rows[0].id,payment.method,payment.amountCents,payment.customerId??null,payment.staffMemberId??null,staffMemberName,payment.method==="STAFF_VOUCHER"?"PENDING":null]);
@@ -841,6 +842,7 @@ export async function quickSaleAction(formData:FormData):Promise<{url?:string;er
       }
 
       const sale=await client.query<{id:number}>("INSERT INTO sales (command_id,cash_session_id,subtotal_cents,discount_cents,service_fee_cents,total_cents,split_count,customer_id,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id",[commandId,cash.rows[0].id,subtotal,discount,service,total,splitCount,saleCustomerId,user.id]);
+      await client.query("UPDATE order_items SET sale_id=$1 WHERE command_id=$2 AND status<>'CANCELLED'",[sale.rows[0].id,commandId]);
       for(const payment of paymentAllocations){
         const staffMemberName=payment.staffMemberId?staffMembersById.get(payment.staffMemberId)??null:null;
         const createdPayment=await client.query<{id:number}>("INSERT INTO payments (sale_id,method,amount_cents,received_cents,change_cents,customer_id,staff_member_id,staff_member_name,staff_voucher_status) VALUES ($1,$2,$3,NULL,0,$4,$5,$6,$7) RETURNING id",[sale.rows[0].id,payment.method,payment.amountCents,payment.customerId??null,payment.staffMemberId??null,staffMemberName,payment.method==="STAFF_VOUCHER"?"PENDING":null]);
@@ -1355,7 +1357,8 @@ export async function cancelSaleAction(formData: FormData) {
       if (!sale.rows[0] || sale.rows[0].status !== "COMPLETED") throw new Error("Venda não pode ser cancelada.");
       const settledVoucher=await client.query("SELECT 1 FROM payments WHERE sale_id=$1 AND method='STAFF_VOUCHER' AND staff_voucher_status='SETTLED' AND voided_at IS NULL LIMIT 1 FOR UPDATE",[saleId]);
       if(settledVoucher.rows[0])throw new Error("Esta venda possui um vale de funcionário já quitado e não pode ser cancelada.");
-      const items = await client.query<{ id:number;product_id:number;stock_pool_id:number;stock_quantity_used:number|string }>("SELECT id,product_id,stock_pool_id,stock_quantity_used FROM order_items WHERE command_id=$1 AND status<>'CANCELLED' FOR UPDATE", [sale.rows[0].command_id]);
+      await client.query("UPDATE order_items SET sale_id=$1 WHERE command_id=$2 AND sale_id IS NULL AND status<>'CANCELLED'",[saleId,sale.rows[0].command_id]);
+      const items = await client.query<{ id:number;product_id:number;stock_pool_id:number;stock_quantity_used:number|string }>("SELECT id,product_id,stock_pool_id,stock_quantity_used FROM order_items WHERE sale_id=$1 AND status<>'CANCELLED' FOR UPDATE", [saleId]);
       for (const item of items.rows) {
         if (Number(item.stock_quantity_used) <= 0) continue;
         await client.query("UPDATE stock_pools SET stock_quantity=stock_quantity+$1,updated_at=NOW() WHERE id=$2", [item.stock_quantity_used, item.stock_pool_id]);

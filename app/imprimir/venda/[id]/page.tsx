@@ -22,7 +22,7 @@ export default async function SalePrintPage({params,searchParams}:{params:Promis
   const canPrint=printPermissions.some((permission)=>hasPermission(user,permission));
   if(!canPrint)redirect(`${firstAllowedPath(user)}?erro=permissao`);
   const [items,payments]=await Promise.all([
-    query<{product_name:string;quantity:number|string;unit_price_cents:number;display_unit:string}>("SELECT product_name,quantity,unit_price_cents,display_unit FROM order_items WHERE command_id=$1 AND (status<>'CANCELLED' OR ($2::timestamptz IS NOT NULL AND cancelled_at=$2::timestamptz)) ORDER BY id",[data.command_id,data.cancelled_at]),
+    query<{product_name:string;quantity:number|string;unit_price_cents:number;display_unit:string}>("SELECT product_name,quantity,unit_price_cents,display_unit FROM order_items WHERE sale_id=$1 ORDER BY id",[saleId]),
     query<{method:string;amount_cents:number;staff_member_name:string|null;customer_name:string|null}>("SELECT p.method,p.amount_cents,COALESCE(sm.name,p.staff_member_name) AS staff_member_name,c.name AS customer_name FROM payments p LEFT JOIN customers c ON c.id=p.customer_id LEFT JOIN staff_members sm ON sm.id=p.staff_member_id WHERE p.sale_id=$1 AND p.voided_at IS NULL ORDER BY p.id",[saleId]),
   ]);
   const quickSale=data.sale_channel==="QUICK_SALE";
