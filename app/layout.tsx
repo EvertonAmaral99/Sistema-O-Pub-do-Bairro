@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./help.css";
 
 export const metadata: Metadata = {
   title: "O Pub do Bairro | Gestão",
