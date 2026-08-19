@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BarChart3, Bike, Boxes, CalendarDays, ChefHat, CircleDollarSign, ClipboardList, Clock3, ContactRound, FileClock, LayoutDashboard, LogOut, Menu, Package, ScrollText, Settings, ShoppingBasket, TrendingUp, UsersRound, Wrench, X, type LucideIcon } from "lucide-react";
+import { BarChart3, Bike, BookOpen, Boxes, CalendarDays, ChefHat, CircleDollarSign, ClipboardList, Clock3, ContactRound, FileClock, LayoutDashboard, LogOut, Menu, Package, ScrollText, Settings, ShoppingBasket, TrendingUp, UsersRound, Wrench, X, type LucideIcon } from "lucide-react";
 import { logoutAction } from "@/app/auth-actions";
 import { BrandLogo } from "@/components/brand-logo";
 import type { ModuleGroup, Permission, SessionUser } from "@/lib/roles";
@@ -43,6 +43,7 @@ export function Sidebar({ user }: { user: SessionUser }) {
           })}</div>;
         })}
         <div className="nav-group"><span className="nav-group-label">Conta</span><Link href="/configuracoes" onClick={()=>setOpen(false)} className={`nav-link ${pathname==="/configuracoes"||pathname.startsWith("/configuracoes/")?"active":""}`}><Settings size={18}/><span>Configurações</span></Link></div>
+        <div className="nav-group nav-group-help"><span className="nav-group-label">Suporte</span><Link href="/ajuda" onClick={()=>setOpen(false)} className={`nav-link ${pathname==="/ajuda"||pathname.startsWith("/ajuda/")?"active":""}`}><BookOpen size={18}/><span>Ajuda</span></Link></div>
       </nav>
       <div className="sidebar-user">
         <strong>{user.name}</strong><small>{roleLabel[user.role]}</small>
