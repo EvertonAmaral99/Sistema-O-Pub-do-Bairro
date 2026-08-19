@@ -3,7 +3,7 @@ import { KeyRound, Pencil, ScrollText, UserCog, UserRoundCheck, UserRoundX } fro
 import { changeOwnPasswordAction, createTableAction, createUserAction, toggleUserStatusAction } from "@/app/system-actions";
 import { requireUser } from "@/lib/auth";
 import { query } from "@/lib/db";
-import { isManagementRole, roleLabel, type Role } from "@/lib/roles";
+import { hasPermission, isManagementRole, roleLabel, type Role } from "@/lib/roles";
 
 type ManagedUser = {
   id: number;
@@ -23,7 +23,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const tables = management ? await query<ManagedTable>(`SELECT id,number,COALESCE(label,'Mesa '||number) AS label,active FROM bar_tables ORDER BY number`) : { rows: [] as ManagedTable[] };
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Conta e administração</p><h2>Configurações</h2><p>Altere sua senha{management ? ", cadastre usuários do sistema e organize os acessos." : "."}</p></div>{management && <Link href="/logs" className="btn btn-light"><ScrollText size={16}/> Abrir histórico</Link>}</div>
+    <div className="page-head"><div><p className="eyebrow">Conta e administração</p><h2>Configurações</h2><p>Altere sua senha{management ? ", cadastre usuários do sistema e organize os acessos." : "."}</p></div>{hasPermission(actor,"AUDIT_LOGS")&&<Link href="/logs" className="btn btn-light"><ScrollText size={16}/> Abrir histórico</Link>}</div>
     {erro && <div className="alert alert-error">{erro}</div>}
     {sucesso === "senha" && <div className="alert alert-info">Sua senha foi alterada.</div>}
 

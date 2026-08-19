@@ -3,7 +3,7 @@ import { CircleDollarSign, ListTodo, Save, Zap } from "lucide-react";
 import { QuickSaleWorkspace } from "@/components/quick-sale-workspace";
 import type { CommandProduct } from "@/components/command-product-picker";
 import type { CustomerOption, StaffMemberOption } from "@/components/payment-form";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { quickSalePendingLabel } from "@/lib/quick-sale-draft";
 
@@ -12,7 +12,7 @@ export const dynamic="force-dynamic";
 type PendingDraftRow={id:number;items:unknown;checkout_state:unknown;updated_at:Date|string};
 
 export default async function QuickSalePage({searchParams}:{searchParams:Promise<{rascunho?:string;nova?:string;tipo?:string}>}){
-  const user=await requireRole(["ADMIN","MANAGER","CASHIER"]);
+  const user=await requirePermission("QUICK_SALES");
   const params=await searchParams;
   const forceNew=params.nova==="1";
   const startAsDelivery=forceNew&&params.tipo==="delivery";

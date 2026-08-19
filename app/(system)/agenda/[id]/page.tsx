@@ -3,11 +3,11 @@ import { notFound } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { deleteEventAction } from "@/app/system-actions";
 import { EventForm } from "@/components/event-form";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 
 export default async function EditEventPage({params,searchParams}:{params:Promise<{id:string}>;searchParams:Promise<{erro?:string}>}){
-  await requireRole(["ADMIN","MANAGER"]);
+  await requirePermission("AGENDA");
   const eventId=Number((await params).id); const queryParams=await searchParams;
   const result=await query<{id:number;name:string;event_date:string;start_time:string;duration_hours:number|string;amount_cents:number}>("SELECT id,name,event_date::text,start_time::text,duration_hours,amount_cents FROM events WHERE id=$1",[eventId]);
   const event=result.rows[0]; if(!event)notFound();

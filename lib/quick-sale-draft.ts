@@ -1,4 +1,6 @@
-export type QuickSalePaymentMethod="CASH"|"PIX"|"DEBIT"|"CREDIT"|"STAFF_VOUCHER"|"STORE_CREDIT";
+import { PAYMENT_METHOD_VALUES, type BasePaymentMethod, type PaymentMethod } from "@/lib/payments";
+
+export type QuickSalePaymentMethod=PaymentMethod;
 export type QuickSalePaymentMode="SINGLE"|"MIXED";
 export type QuickSaleFulfillmentType="COUNTER"|"APP_PICKUP";
 export type QuickSaleSplitPayment={method:QuickSalePaymentMethod|"";amount:string;staffMemberId:string};
@@ -18,16 +20,15 @@ export type QuickSaleCheckoutDraft={
   newCustomerCpf:string;
   newCustomerContact:string;
   storeCreditAmount:string;
-  remainderMethod:Exclude<QuickSalePaymentMethod,"STORE_CREDIT">|"";
+  remainderMethod:BasePaymentMethod|"";
   remainderStaffMemberId:string;
   format:"80"|"58"|"a4";
   fulfillmentType:QuickSaleFulfillmentType;
-  courierAppName:string;
   courierAppCode:string;
 };
 
-const paymentMethods=new Set<QuickSalePaymentMethod>(["CASH","PIX","DEBIT","CREDIT","STAFF_VOUCHER","STORE_CREDIT"]);
-const remainderMethods=new Set<Exclude<QuickSalePaymentMethod,"STORE_CREDIT">>(["CASH","PIX","DEBIT","CREDIT","STAFF_VOUCHER"]);
+const paymentMethods=new Set<QuickSalePaymentMethod>(PAYMENT_METHOD_VALUES);
+const remainderMethods=new Set<BasePaymentMethod>(PAYMENT_METHOD_VALUES.filter((method):method is BasePaymentMethod=>method!=="STORE_CREDIT"));
 
 function sourceObject(value:unknown):Record<string,unknown>{
   return value&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
@@ -46,8 +47,8 @@ function paymentMethodValue(value:unknown):QuickSalePaymentMethod|""{
   return typeof value==="string"&&paymentMethods.has(value as QuickSalePaymentMethod)?value as QuickSalePaymentMethod:"";
 }
 
-function remainderMethodValue(value:unknown):Exclude<QuickSalePaymentMethod,"STORE_CREDIT">|""{
-  return typeof value==="string"&&remainderMethods.has(value as Exclude<QuickSalePaymentMethod,"STORE_CREDIT">)?value as Exclude<QuickSalePaymentMethod,"STORE_CREDIT">:"";
+function remainderMethodValue(value:unknown):BasePaymentMethod|""{
+  return typeof value==="string"&&remainderMethods.has(value as BasePaymentMethod)?value as BasePaymentMethod:"";
 }
 
 export function emptyQuickSaleCheckoutDraft():QuickSaleCheckoutDraft{
@@ -55,7 +56,7 @@ export function emptyQuickSaleCheckoutDraft():QuickSaleCheckoutDraft{
     discount:"0",service:"0",paymentMode:"SINGLE",splitCount:"1",paymentMethod:"",staffMemberId:"",
     splitPayments:[{method:"",amount:"",staffMemberId:""},{method:"",amount:"",staffMemberId:""}],
     customerSearch:"",selectedCustomerId:"",newCustomerOpen:false,newCustomerName:"",newCustomerCpf:"",newCustomerContact:"",
-    storeCreditAmount:"",remainderMethod:"",remainderStaffMemberId:"",format:"80",fulfillmentType:"COUNTER",courierAppName:"",courierAppCode:"",
+    storeCreditAmount:"",remainderMethod:"",remainderStaffMemberId:"",format:"80",fulfillmentType:"COUNTER",courierAppCode:"",
   };
 }
 
@@ -88,7 +89,6 @@ export function normalizeQuickSaleCheckoutDraft(value:unknown):QuickSaleCheckout
     remainderStaffMemberId:idValue(source.remainderStaffMemberId),
     format,
     fulfillmentType:source.fulfillmentType==="APP_PICKUP"?"APP_PICKUP":"COUNTER",
-    courierAppName:textValue(source.courierAppName,60),
     courierAppCode:textValue(source.courierAppCode,40),
   };
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Filter, ScrollText } from "lucide-react";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { formatDateTime } from "@/lib/format";
 
@@ -20,7 +20,7 @@ const movementConfig = [
 ] as const;
 
 export default async function LogsPage({searchParams}:{searchParams:Promise<{usuario?:string;movimento?:string}>}) {
-  await requireRole(["ADMIN", "MANAGER"]);
+  await requirePermission("AUDIT_LOGS");
   const params=await searchParams;
   const userId=/^\d+$/.test(params.usuario??"")?Number(params.usuario):null;
   const action=movementConfig.some(([key])=>key===params.movimento)?params.movimento??"":"";

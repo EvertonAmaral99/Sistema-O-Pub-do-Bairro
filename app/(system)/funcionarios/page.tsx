@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BadgeDollarSign, BriefcaseBusiness, UserRoundCheck, UserRoundPlus, UserRoundX } from "lucide-react";
 import { createStaffMemberAction, toggleStaffMemberStatusAction } from "@/app/system-actions";
-import { requireRole } from "@/lib/auth";
+import { requirePermission } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { formatCpf, formatDateTime, formatMoney } from "@/lib/format";
 
@@ -18,7 +18,7 @@ type StaffMemberRow={
 };
 
 export default async function StaffMembersPage({searchParams}:{searchParams:Promise<{erro?:string;sucesso?:string}>}){
-  await requireRole(["ADMIN","MANAGER"]);
+  await requirePermission("STAFF");
   const params=await searchParams;
   const staffMembers=await query<StaffMemberRow>(`SELECT sm.id,sm.name,sm.cpf,sm.contact,sm.position,sm.active,sm.created_at,
     COUNT(p.id)::text AS pending_count,COALESCE(SUM(p.amount_cents),0)::text AS pending_total
