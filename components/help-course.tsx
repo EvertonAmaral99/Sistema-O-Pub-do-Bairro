@@ -73,6 +73,16 @@ export function HelpCourse({ chapters, userId, profileLabel, canDownloadFullManu
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function choosePrevious() {
+    const previous = chapters[chapterIndex - 1];
+    if (previous) choose(previous.number);
+  }
+
+  function chooseNext() {
+    const next = chapters[chapterIndex + 1];
+    if (next) choose(next.number);
+  }
+
   function toggleComplete() {
     if (!chapter) return;
     const next = completedVisible.includes(chapter.number)
@@ -91,7 +101,7 @@ export function HelpCourse({ chapters, userId, profileLabel, canDownloadFullManu
       <aside className={`help-index ${mobileIndex ? "open" : ""}`}><div className="help-index-head"><div><span className="eyebrow">Sumário</span><strong>{chapters.length} capítulos liberados</strong></div><button type="button" aria-label="Fechar sumário" onClick={() => setMobileIndex(false)}><X size={20} /></button></div><label className="help-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar na sua trilha..." /></label><nav>{filtered.map((item) => <button type="button" key={item.number} onClick={() => choose(item.number)} className={`${selected === item.number ? "active" : ""} ${completedVisible.includes(item.number) ? "complete" : ""}`}><span>{completedVisible.includes(item.number) ? <Check size={13} /> : item.number}</span><div><strong>{item.title}</strong><small>Capítulo {item.number}</small></div></button>)}</nav>{filtered.length === 0 && <div className="help-no-results">Nenhum capítulo encontrado na sua trilha.</div>}</aside>
       {mobileIndex && <button className="help-index-backdrop" type="button" aria-label="Fechar sumário" onClick={() => setMobileIndex(false)} />}
       <article className="help-content"><div className="help-chapter-head"><div><span className="help-chapter-number">{String(chapter.number).padStart(2, "0")}</span><span className="eyebrow">Capítulo {chapterIndex + 1} de {chapters.length} da sua trilha</span><h1>{chapter.title}</h1><p>{chapter.subtitle}</p></div><button type="button" className={`help-complete-button ${completedVisible.includes(chapter.number) ? "complete" : ""}`} onClick={toggleComplete}>{completedVisible.includes(chapter.number) ? <CheckCircle2 size={18} /> : <span />}{completedVisible.includes(chapter.number) ? "Concluído" : "Marcar como concluído"}</button></div><div className="help-audience"><ShieldCheck size={18} /><div><strong>Quem deve estudar</strong><p>{chapter.audience}</p></div></div>{chapter.sections.map((section, index) => <SectionBlock section={section} key={`${chapter.number}-${index}`} />)}
-        <div className="help-chapter-nav"><button className="btn btn-light" disabled={chapterIndex === 0} onClick={() => choose(chapters[chapterIndex - 1]?.number)}><ChevronLeft size={17} /> Anterior</button><span>{chapterIndex + 1} de {chapters.length} capítulos liberados</span><button className="btn btn-primary" disabled={chapterIndex === chapters.length - 1} onClick={() => choose(chapters[chapterIndex + 1]?.number)}>Próximo <ChevronRight size={17} /></button></div>
+        <div className="help-chapter-nav"><button className="btn btn-light" disabled={chapterIndex === 0} onClick={choosePrevious}><ChevronLeft size={17} /> Anterior</button><span>{chapterIndex + 1} de {chapters.length} capítulos liberados</span><button className="btn btn-primary" disabled={chapterIndex === chapters.length - 1} onClick={chooseNext}>Próximo <ChevronRight size={17} /></button></div>
       </article>
     </div>
   </div>;
