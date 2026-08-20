@@ -100,11 +100,254 @@
   flex-wrap: wrap;
 }
 
+/* Painel lateral da comanda: separa visualmente cada grupo de informação. */
+.command-options-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.command-info-header {
+  display: grid;
+  gap: 13px;
+  padding: 18px;
+  background: linear-gradient(145deg, #fff4f5 0%, #fffafa 100%);
+  border-bottom: 1px solid var(--line);
+}
+
+.command-info-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.command-info-title h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.command-info-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.command-info-summary-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #ead8da;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.command-info-summary-item small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.command-info-summary-item strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.command-info-summary-item.command-info-total strong {
+  color: var(--amber-dark);
+  font: 700 20px Georgia, serif;
+}
+
+.command-info-section {
+  padding: 17px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.command-info-section:last-child {
+  border-bottom: 0;
+}
+
+.command-info-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.command-info-section-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.command-info-section-title svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--amber-dark);
+}
+
+.command-info-section-title h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.command-info-section-title p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.command-info-muted {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.command-items-list {
+  display: grid;
+  gap: 8px;
+}
+
+.command-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid #eadfe0;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.command-item-main {
+  min-width: 0;
+}
+
+.command-item-main strong {
+  display: block;
+  line-height: 1.35;
+}
+
+.command-item-meta {
+  margin-top: 6px;
+}
+
+.command-item-value {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.command-subtotal-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  background: #241214;
+  color: #fff;
+}
+
+.command-subtotal-box span {
+  color: #e9d5d8;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.command-subtotal-box strong {
+  font: 700 22px Georgia, serif;
+}
+
+.command-info-details {
+  border: 1px solid #eadfe0;
+  border-radius: 11px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.command-info-details > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.command-info-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.command-info-details[open] > summary {
+  border-bottom: 1px solid #eadfe0;
+  background: #fff7f7;
+}
+
+.command-info-details-body {
+  padding: 12px;
+}
+
+.command-info-section .priority-control,
+.command-info-section .form-stack {
+  gap: 11px;
+}
+
+.command-info-section .field {
+  gap: 5px;
+}
+
+.command-info-section .input,
+.command-info-section .select,
+.command-info-section .textarea {
+  min-height: 40px;
+}
+
+.command-info-section-payment {
+  background: #fffdfd;
+}
+
+.command-info-danger {
+  background: #fff8f7;
+}
+
+.command-info-danger .command-info-details {
+  border-color: #e8c7c4;
+}
+
+.command-info-danger .command-info-details > summary {
+  color: #8e332b;
+}
+
 @media (hover: none) {
   .command-card-delete {
     opacity: 1;
     pointer-events: auto;
     transform: scale(1);
+  }
+}
+
+@media (max-width: 760px) {
+  .command-info-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .command-info-header,
+  .command-info-section {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 }
 
