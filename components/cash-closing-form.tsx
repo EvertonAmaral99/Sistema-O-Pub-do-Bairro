@@ -2,7 +2,7 @@
 
 import { CircleAlert, CircleCheck, Printer } from "lucide-react";
 import { useState } from "react";
-import { closeCashAction } from "@/app/system-actions";
+import { closeCashAction } from "@/app/cash-command-actions";
 import { PrintActionForm } from "@/components/print-action-form";
 
 type PaymentTotals = {
