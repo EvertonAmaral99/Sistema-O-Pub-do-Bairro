@@ -42,7 +42,6 @@ export async function openCommandAction(formData: FormData) {
   }
   if (commandNumber === null && !commandName) fail("/comandas", "Informe o número ou o nome da comanda.");
   if (commandName && commandName.length > 80) fail("/comandas", "O nome da comanda deve ter no máximo 80 caracteres.");
-  if (tableIds.length < 1) fail("/comandas", "Selecione ao menos uma mesa para a comanda.");
 
   let commandId = 0;
   try {
@@ -58,7 +57,7 @@ export async function openCommandAction(formData: FormData) {
         throw new Error("Uma das mesas selecionadas está indisponível.");
       }
 
-      const primaryTableId = tables.rows[0].id;
+      const primaryTableId = tables.rows[0]?.id ?? null;
       const created = await client.query<{ id: number }>(
         "INSERT INTO commands (command_number,command_name,table_id,opened_by) VALUES ($1,$2,$3,$4) RETURNING id",
         [commandNumber, commandName, primaryTableId, user.id],
@@ -67,19 +66,20 @@ export async function openCommandAction(formData: FormData) {
         await client.query("INSERT INTO command_tables (command_id,table_id) VALUES ($1,$2)", [created.rows[0].id, table.id]);
       }
 
-      const displayLabel = tables.rows.map((table) => table.label).join(" + ");
+      const displayLabel = tables.rows.length > 0 ? tables.rows.map((table) => table.label).join(" + ") : "Sem mesa";
+      const locationText = tables.rows.length > 0 ? `em ${displayLabel}` : "sem mesa vinculada";
       await auditLog(
         {
           userId: user.id,
           action: "COMMAND_OPENED",
           entityType: "COMMAND",
           entityId: created.rows[0].id,
-          description: `Abriu a comanda ${commandLabel({ command_number: commandNumber, command_name: commandName })} em ${displayLabel}.`,
+          description: `Abriu a comanda ${commandLabel({ command_number: commandNumber, command_name: commandName })} ${locationText}.`,
           metadata: {
             commandNumber,
             commandName,
             tableIds: tables.rows.map((table) => table.id),
-            table: displayLabel,
+            table: tables.rows.length > 0 ? displayLabel : null,
             cashSessionId: cash.rows[0].id,
           },
         },

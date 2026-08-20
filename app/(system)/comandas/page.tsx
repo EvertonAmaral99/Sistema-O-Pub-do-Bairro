@@ -32,7 +32,7 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
     <div className="commands-page">
       <LiveRefresh/>
       <div className="page-head commands-page-head">
-        <div><p className="eyebrow">Atendimento</p><h2>Mesas e comandas</h2><p>Escolha uma ou várias mesas para cada comanda.</p></div>
+        <div><p className="eyebrow">Atendimento</p><h2>Mesas e comandas</h2><p>Abra a comanda pelo número ou nome e vincule uma mesa somente se desejar.</p></div>
         <div className="actions">
           <span className={`badge ${cashOpen ? "badge-green" : "badge-red"}`}><CircleDollarSign size={13}/> Caixa {cashOpen ? "aberto" : "fechado"}</span>
           <span className="badge badge-blue"><Radio size={13}/> Atualização automática</span>
@@ -45,7 +45,7 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
         <form action={openCommandAction} className="form-grid command-opening-form">
           <div className="field command-number-field"><label>Número da comanda</label><input className="input" name="commandNumber" type="number" inputMode="numeric" min="1" autoComplete="off" autoFocus disabled={!cashOpen}/><small>Preencha o número ou o nome da comanda.</small></div>
           <div className="field command-name-field"><label>Nome da comanda</label><input className="input" name="commandName" maxLength={80} autoComplete="off" placeholder="Ex.: Aniversário da Maria" disabled={!cashOpen}/><small>É obrigatório informar pelo menos um dos dois campos.</small></div>
-          <div className="field span-2 command-table-field"><label>Mesas desta comanda</label><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className="table-choice" key={table.id}><input type="checkbox" name="tableIds" value={table.id} disabled={!cashOpen}/><span><strong>{table.label}</strong><small>Mesa {table.number}</small></span></label>)}</div><small>Marque uma mesa ou várias mesas. A mesma mesa pode estar em outras comandas abertas.</small></div>
+          <div className="field span-2 command-table-field"><label>Mesas desta comanda</label><div className="table-choice-grid command-table-choice-grid">{tables.rows.map((table)=><label className="table-choice" key={table.id}><input type="checkbox" name="tableIds" value={table.id} disabled={!cashOpen}/><span><strong>{table.label}</strong><small>Mesa {table.number}</small></span></label>)}</div><small>Vincular uma mesa é opcional. Se desejar, marque uma ou várias mesas; a mesma mesa pode estar em outras comandas abertas.</small></div>
           <div className="form-submit-field command-open-submit"><button className="btn btn-primary" type="submit" disabled={!cashOpen}>{cashOpen ? "Abrir comanda" : "Abra o caixa para continuar"}</button></div>
         </form>
       </section>
