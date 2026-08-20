@@ -5,6 +5,14 @@ import { useEffect } from "react";
 function applyPrintFormatPolicy(root: ParentNode = document) {
   root.querySelectorAll<HTMLSelectElement>('select[name="format"]').forEach((select) => {
     select.querySelectorAll<HTMLOptionElement>('option[value="80"]').forEach((option) => option.remove());
+
+    if (select.dataset.printFormatPolicy !== "ready") {
+      select.dataset.printFormatPolicy = "ready";
+      select.value = "58";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+
     if (select.value !== "58" && select.value !== "a4") {
       select.value = "58";
       select.dispatchEvent(new Event("change", { bubbles: true }));
