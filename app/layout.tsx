@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./help.css";
 import "./help-pdf-pending.css";
+import "./commands.css";
+import { PrintFormatPolicy } from "@/components/print-format-policy";
 
 export const metadata: Metadata = {
   title: "O Pub do Bairro | Gestão",
@@ -23,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body><PrintFormatPolicy />{children}</body>
     </html>
   );
 }

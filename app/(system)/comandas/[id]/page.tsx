@@ -60,7 +60,7 @@ export default async function CommandDetailPage({ params, searchParams }: Params
           {command.status === "OPEN" && <>
             <div className="divider"/>
             <PrintActionForm action={sendKitchenAction} className="form-stack">
-              <input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Formato do pedido</label><select className="select" name="format" defaultValue="80"><option value="80">Térmica 80 mm</option><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
+              <input type="hidden" name="commandId" value={commandId}/><div className="field"><label>Formato do pedido</label><select className="select" name="format" defaultValue="58"><option value="58">Térmica 58 mm</option><option value="a4">Folha A4</option></select></div>
               <button className="btn btn-dark" type="submit" disabled={!hasPrepPending}><Send size={16}/> Enviar itens para a cozinha</button>
             </PrintActionForm>
             {!hasPrepPending&&<small style={{color:"var(--muted)"}}>Somente produtos cadastrados no setor Cozinha geram pedido de preparo.</small>}

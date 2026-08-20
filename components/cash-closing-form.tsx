@@ -125,8 +125,7 @@ export function CashClosingForm({
         </div>
         <div className="field">
           <label>Formato</label>
-          <select className="select" name="format" defaultValue="a4">
-            <option value="80">Térmica 80 mm</option>
+          <select className="select" name="format" defaultValue="58">
             <option value="58">Térmica 58 mm</option>
             <option value="a4">Folha A4</option>
           </select>

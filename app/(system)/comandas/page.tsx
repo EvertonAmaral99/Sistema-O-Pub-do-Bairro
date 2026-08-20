@@ -4,12 +4,16 @@ import { openCommandAction } from "@/app/system-actions";
 import { LiveRefresh } from "@/components/live-refresh";
 import { PriorityInfo } from "@/components/priority-info";
 import { CommandCardIdentifier } from "@/components/command-card-identifier";
+import { CommandCancelButton } from "@/components/command-cancel-button";
 import { query } from "@/lib/db";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { requirePermission } from "@/lib/auth";
+import { canManageCommand } from "@/lib/roles";
+import { commandLabel } from "@/lib/command-label";
 
 export default async function CommandsPage({ searchParams }: { searchParams: Promise<{ erro?: string }> }) {
-  await requirePermission("COMMANDS");
+  const user = await requirePermission("COMMANDS");
+  const canCancel = canManageCommand(user.role);
   const { erro } = await searchParams;
   const [tables, commands] = await Promise.all([
     query<{ id: number; number: number; label: string }>(`SELECT bt.id,bt.number,COALESCE(bt.label,'Mesa '||bt.number) AS label FROM bar_tables bt WHERE bt.active=TRUE ORDER BY bt.number`),
@@ -36,12 +40,15 @@ export default async function CommandsPage({ searchParams }: { searchParams: Pro
         </form>
       </section>
       {commands.rows.length === 0 ? <div className="card empty">Nenhuma comanda aberta.</div> : <div className="command-grid">
-        {commands.rows.map((command) => { const itemCount=Math.trunc(Number(command.items)); return <Link className={`command-card ${command.priority ? "priority-alert" : ""}`} href={`/comandas/${command.id}`} key={command.id}>
-          <div className="command-top"><CommandCardIdentifier commandNumber={command.command_number} commandName={command.command_name}/><span className="badge badge-amber">{command.table_display}</span></div>
-          {command.priority && <div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
-          <p>{command.customer_name || "Cliente não informado"}<br/>{itemCount.toLocaleString("pt-BR")} {itemCount===1?"item":"itens"} · {formatDateTime(command.opened_at)}</p>
-          <strong className="money">{formatMoney(command.total)}</strong>
-        </Link>;})}
+        {commands.rows.map((command) => { const itemCount=Math.trunc(Number(command.items)); return <div className="command-card-shell" key={command.id}>
+          <Link className={`command-card ${command.priority ? "priority-alert" : ""}`} href={`/comandas/${command.id}`}>
+            <div className="command-top"><CommandCardIdentifier commandNumber={command.command_number} commandName={command.command_name}/><span className="badge badge-amber">{command.table_display}</span></div>
+            {command.priority && <div className="priority-label">Prioridade <PriorityInfo note={command.priority_note}/></div>}
+            <p>{command.customer_name || "Cliente não informado"}<br/>{itemCount.toLocaleString("pt-BR")} {itemCount===1?"item":"itens"} · {formatDateTime(command.opened_at)}</p>
+            <strong className="money">{formatMoney(command.total)}</strong>
+          </Link>
+          {canCancel && <CommandCancelButton commandId={command.id} commandLabel={`Comanda ${commandLabel(command)}`} tableDisplay={command.table_display}/>} 
+        </div>;})}
       </div>}
     </div>
   );
