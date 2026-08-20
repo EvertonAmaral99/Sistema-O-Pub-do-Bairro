@@ -22,7 +22,7 @@ export type QuickSaleCheckoutDraft={
   storeCreditAmount:string;
   remainderMethod:BasePaymentMethod|"";
   remainderStaffMemberId:string;
-  format:"58"|"a4";
+  format:"80"|"58"|"a4";
   fulfillmentType:QuickSaleFulfillmentType;
   courierAppCode:string;
 };
