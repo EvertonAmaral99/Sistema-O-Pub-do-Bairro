@@ -1,0 +1,225 @@
+/* Ajustes finais de alinhamento para Comandas e Venda rápida.
+   Objetivo: nenhum conteúdo deve forçar largura além do card ou exigir rolagem horizontal. */
+
+.command-options-panel,
+.quick-sale-checkout-panel,
+.command-info-section-payment,
+.command-info-section-payment > form,
+.quick-sale-checkout-panel > form,
+.command-info-section,
+.command-info-header {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.command-options-panel,
+.quick-sale-checkout-panel {
+  overflow-x: hidden !important;
+}
+
+.command-options-panel *,
+.quick-sale-checkout-panel * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.command-options-panel :is(h1,h2,h3,h4,p,span,small,strong,label,summary,button),
+.quick-sale-checkout-panel :is(h1,h2,h3,h4,p,span,small,strong,label,summary,button) {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.command-options-panel :is(.input,.select,.textarea),
+.quick-sale-checkout-panel :is(.input,.select,.textarea) {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Resumo da comanda */
+.command-info-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.command-info-summary-item strong {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.25;
+}
+
+/* Itens: produto pode quebrar linha sem empurrar preço/botões para fora. */
+.command-item-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+}
+
+.command-item-main,
+.command-item-main strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.command-item-value {
+  min-width: max-content;
+  max-width: 42%;
+}
+
+.command-subtotal-box,
+.quick-sale-subtotal {
+  width: 100%;
+  min-width: 0;
+}
+
+.command-subtotal-box span,
+.command-subtotal-box strong,
+.quick-sale-subtotal span,
+.quick-sale-subtotal strong {
+  min-width: 0;
+}
+
+/* O painel direito é estreito: formulários precisam empilhar de forma natural. */
+.command-info-section-payment .form-grid,
+.quick-sale-checkout-panel .form-grid,
+.command-info-section-payment .customer-quick-create,
+.quick-sale-checkout-panel .customer-quick-create,
+.command-info-section-payment .split-calculator,
+.quick-sale-checkout-panel .split-calculator,
+.command-info-section-payment .payment-mode-card,
+.quick-sale-checkout-panel .payment-mode-card {
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100%;
+}
+
+.command-info-section-payment .payment-mode-options,
+.quick-sale-checkout-panel .payment-mode-options,
+.command-info-section-payment .fulfillment-options,
+.quick-sale-checkout-panel .fulfillment-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+
+.command-info-section-payment .payment-mode-option,
+.quick-sale-checkout-panel .payment-mode-option,
+.command-info-section-payment .fulfillment-option,
+.quick-sale-checkout-panel .fulfillment-option {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Pagamento dividido/misto nunca fica mais largo que o card. */
+.command-info-section-payment .split-payment-list,
+.quick-sale-checkout-panel .split-payment-list,
+.command-info-section-payment .mixed-payment-head,
+.quick-sale-checkout-panel .mixed-payment-head {
+  width: 100%;
+  min-width: 0;
+}
+
+.command-info-section-payment .split-payment-row,
+.quick-sale-checkout-panel .split-payment-row {
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.command-info-section-payment .payment-row-title,
+.quick-sale-checkout-panel .payment-row-title,
+.command-info-section-payment .mixed-payment-head,
+.quick-sale-checkout-panel .mixed-payment-head,
+.command-info-section-payment .payment-balance-head,
+.quick-sale-checkout-panel .payment-balance-head,
+.command-info-section-payment .payment-balance-details,
+.quick-sale-checkout-panel .payment-balance-details,
+.command-info-section-payment .customer-identification-head,
+.quick-sale-checkout-panel .customer-identification-head,
+.command-info-section-payment .delivery-setup-head,
+.quick-sale-checkout-panel .delivery-setup-head {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.command-info-section-payment .selected-customer,
+.quick-sale-checkout-panel .selected-customer,
+.command-info-section-payment .customer-search-wrap,
+.quick-sale-checkout-panel .customer-search-wrap,
+.command-info-section-payment .customer-search-results,
+.quick-sale-checkout-panel .customer-search-results,
+.command-info-section-payment .delivery-setup,
+.quick-sale-checkout-panel .delivery-setup,
+.command-info-section-payment .payment-method-selector,
+.quick-sale-checkout-panel .payment-method-selector,
+.command-info-section-payment .payment-balance,
+.quick-sale-checkout-panel .payment-balance {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Carrinho da venda rápida. */
+.quick-sale-cart-list,
+.quick-sale-cart-item {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.quick-sale-cart-item {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  column-gap: 10px;
+}
+
+.quick-sale-cart-item > div:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.quick-sale-cart-line-total,
+.quick-sale-quantity-control {
+  min-width: 0;
+}
+
+.quick-sale-quantity-control input {
+  min-width: 48px;
+  max-width: 72px;
+}
+
+/* Textos de botões e campos não vazam do esquadro. */
+.command-options-panel .btn,
+.quick-sale-checkout-panel .btn {
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+
+.command-info-details > summary {
+  width: 100%;
+}
+
+@media (max-width: 1180px) {
+  .command-info-section-payment .payment-mode-options,
+  .quick-sale-checkout-panel .payment-mode-options,
+  .command-info-section-payment .fulfillment-options,
+  .quick-sale-checkout-panel .fulfillment-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .command-info-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .command-item-row,
+  .quick-sale-cart-item {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .command-item-value,
+  .quick-sale-cart-line-total {
+    justify-items: start;
+    max-width: 100%;
+  }
+}

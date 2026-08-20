@@ -5,6 +5,7 @@ import "./help-pdf-pending.css";
 import "./commands.css";
 import "./checkout-clarity.css";
 import "./checkout-visibility-fix.css";
+import "./checkout-alignment-fix.css";
 import { PrintFormatPolicy } from "@/components/print-format-policy";
 
 export const metadata: Metadata = {
