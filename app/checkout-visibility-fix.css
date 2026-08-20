@@ -1,0 +1,261 @@
+/* Correção de visibilidade e leitura do checkout.
+   Mantém todas as regras atuais; garante que as áreas de pagamento e impressão
+   sejam acessíveis e fáceis de localizar em Comandas e Venda rápida. */
+
+.command-options-panel {
+  max-height: calc(100dvh - 150px);
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--amber) #f1e3e5;
+}
+
+.command-options-panel::-webkit-scrollbar,
+.quick-sale-checkout-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.command-options-panel::-webkit-scrollbar-track,
+.quick-sale-checkout-panel::-webkit-scrollbar-track {
+  background: #f1e3e5;
+  border-radius: 999px;
+}
+
+.command-options-panel::-webkit-scrollbar-thumb,
+.quick-sale-checkout-panel::-webkit-scrollbar-thumb {
+  background: var(--amber);
+  border: 2px solid #f1e3e5;
+  border-radius: 999px;
+}
+
+.command-info-header {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  box-shadow: 0 8px 18px rgba(91, 18, 25, .07);
+}
+
+.command-info-section-payment {
+  position: relative;
+  margin: 12px;
+  border: 2px solid #d7a5aa !important;
+  border-radius: 14px;
+  background: #fff !important;
+}
+
+.command-info-section-payment::before {
+  content: "PAGAMENTO E FINALIZAÇÃO";
+  display: block;
+  margin: -1px -1px 14px;
+  border-radius: 12px 12px 0 0;
+  background: #351316;
+  color: #fff;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.command-info-section-payment > .command-info-section-head {
+  margin-left: 2px;
+  margin-right: 2px;
+}
+
+.command-info-section-payment .payment-mode-card {
+  border-color: #d49ba1;
+  background: #fff7f8;
+}
+
+.command-info-section-payment .payment-mode-option {
+  min-height: 74px;
+}
+
+.command-info-section-payment .payment-mode-option.active {
+  border-color: var(--amber);
+  background: #ffe9eb;
+  box-shadow: 0 0 0 3px rgba(238,27,36,.09);
+}
+
+.command-info-section-payment .payment-balance {
+  border-width: 2px;
+}
+
+.command-info-section-payment form.form-stack > .field:has(select[name="format"]) {
+  border: 2px solid #d49ba1;
+  border-radius: 12px;
+  background: #fff8f8;
+  padding: 13px;
+}
+
+.command-info-section-payment form.form-stack > button.btn-primary[type="submit"] {
+  position: sticky;
+  bottom: 8px;
+  z-index: 15;
+  min-height: 58px;
+  width: 100%;
+  font-size: 15px;
+  box-shadow: 0 12px 26px rgba(181,16,24,.28);
+}
+
+.quick-sale-checkout-panel {
+  max-height: calc(100dvh - 150px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 0 !important;
+  background: #f7eff0 !important;
+}
+
+.quick-sale-checkout-panel > .quick-sale-section-head {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  margin: 0;
+  padding: 17px 18px;
+  background: #fffafa;
+  border-bottom: 1px solid #dfc7ca;
+  box-shadow: 0 8px 18px rgba(91,18,25,.06);
+}
+
+.quick-sale-checkout-panel > .quick-sale-cart-empty,
+.quick-sale-checkout-panel > .quick-sale-cart-list,
+.quick-sale-checkout-panel > .quick-sale-subtotal,
+.quick-sale-checkout-panel > .divider,
+.quick-sale-checkout-panel > form.form-stack {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+
+.quick-sale-checkout-panel > .quick-sale-cart-list {
+  margin-top: 16px;
+}
+
+.quick-sale-checkout-panel > .quick-sale-subtotal {
+  margin-top: 12px;
+  background: #351316;
+  border-color: #351316;
+  color: #fff;
+}
+
+.quick-sale-checkout-panel > .quick-sale-subtotal span {
+  color: #ead8da;
+  font-weight: 800;
+}
+
+.quick-sale-checkout-panel > .quick-sale-subtotal strong {
+  color: #fff;
+  font-size: 22px;
+}
+
+.quick-sale-checkout-panel > form.form-stack {
+  margin-bottom: 16px;
+  border: 2px solid #d8b4b8;
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px;
+  gap: 16px;
+}
+
+.quick-sale-checkout-panel > form.form-stack::before {
+  content: "3. PAGAMENTO, FINALIZAÇÃO E IMPRESSÃO" !important;
+  margin: -16px -16px 2px;
+  border: 0 !important;
+  border-radius: 12px 12px 0 0 !important;
+  background: #351316 !important;
+  color: #fff !important;
+  padding: 12px 15px !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  letter-spacing: .05em;
+}
+
+.quick-sale-checkout-panel .payment-label {
+  margin-top: 4px !important;
+  background: #f4e5e7 !important;
+  border-color: #dfbfc3 !important;
+  color: #5c1c22 !important;
+  font-weight: 900;
+}
+
+.quick-sale-checkout-panel .payment-mode-card {
+  border: 2px solid #d49ba1 !important;
+  background: #fff7f8 !important;
+}
+
+.quick-sale-checkout-panel .payment-mode-option {
+  min-height: 78px;
+  border-width: 2px;
+}
+
+.quick-sale-checkout-panel .payment-mode-option.active {
+  border-color: var(--amber) !important;
+  background: #ffe9eb !important;
+  box-shadow: 0 0 0 3px rgba(238,27,36,.09) !important;
+}
+
+.quick-sale-checkout-panel .mixed-payment-head {
+  border: 2px solid #8aabc8;
+  background: #eef6fd;
+}
+
+.quick-sale-checkout-panel .split-payment-row {
+  border: 1px solid #dcc7ca;
+  background: #fff;
+}
+
+.quick-sale-checkout-panel .payment-balance {
+  border-width: 2px;
+  border-radius: 13px;
+  padding: 15px;
+}
+
+.quick-sale-checkout-panel form.form-stack > .field:has(select[name="format"]) {
+  border: 2px solid #d49ba1;
+  border-radius: 12px;
+  background: #fff8f8;
+  padding: 13px;
+}
+
+.quick-sale-checkout-panel form.form-stack > button.btn-primary[type="submit"] {
+  position: sticky;
+  bottom: 8px;
+  z-index: 15;
+  width: 100%;
+  min-height: 60px;
+  font-size: 15px;
+  font-weight: 900;
+  box-shadow: 0 12px 28px rgba(181,16,24,.30);
+}
+
+@media (max-width: 1000px) {
+  .command-options-panel,
+  .quick-sale-checkout-panel {
+    max-height: none;
+    overflow: visible !important;
+  }
+
+  .command-info-header,
+  .quick-sale-checkout-panel > .quick-sale-section-head,
+  .command-info-section-payment form.form-stack > button.btn-primary[type="submit"],
+  .quick-sale-checkout-panel form.form-stack > button.btn-primary[type="submit"] {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .command-info-section-payment {
+    margin: 8px;
+  }
+
+  .quick-sale-checkout-panel > .quick-sale-cart-empty,
+  .quick-sale-checkout-panel > .quick-sale-cart-list,
+  .quick-sale-checkout-panel > .quick-sale-subtotal,
+  .quick-sale-checkout-panel > .divider,
+  .quick-sale-checkout-panel > form.form-stack {
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+}
