@@ -22,7 +22,7 @@ export type QuickSaleCheckoutDraft={
   storeCreditAmount:string;
   remainderMethod:BasePaymentMethod|"";
   remainderStaffMemberId:string;
-  format:"80"|"58"|"a4";
+  format:"58"|"a4";
   fulfillmentType:QuickSaleFulfillmentType;
   courierAppCode:string;
 };
@@ -56,7 +56,7 @@ export function emptyQuickSaleCheckoutDraft():QuickSaleCheckoutDraft{
     discount:"0",service:"0",paymentMode:"SINGLE",splitCount:"1",paymentMethod:"",staffMemberId:"",
     splitPayments:[{method:"",amount:"",staffMemberId:""},{method:"",amount:"",staffMemberId:""}],
     customerSearch:"",selectedCustomerId:"",newCustomerOpen:false,newCustomerName:"",newCustomerCpf:"",newCustomerContact:"",
-    storeCreditAmount:"",remainderMethod:"",remainderStaffMemberId:"",format:"80",fulfillmentType:"COUNTER",courierAppCode:"",
+    storeCreditAmount:"",remainderMethod:"",remainderStaffMemberId:"",format:"58",fulfillmentType:"COUNTER",courierAppCode:"",
   };
 }
 
@@ -69,7 +69,7 @@ export function normalizeQuickSaleCheckoutDraft(value:unknown):QuickSaleCheckout
     return{method:paymentMethodValue(payment.method),amount:textValue(payment.amount,20),staffMemberId:idValue(payment.staffMemberId)};
   });
   while(splitPayments.length<2)splitPayments.push({method:"",amount:"",staffMemberId:""});
-  const format=source.format==="58"||source.format==="a4"?source.format:"80";
+  const format=source.format==="a4"?"a4":"58";
   return{
     discount:textValue(source.discount,20,"0"),
     service:textValue(source.service,20,"0"),
