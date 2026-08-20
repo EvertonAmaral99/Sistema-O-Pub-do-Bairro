@@ -1,0 +1,129 @@
+.command-card-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.command-card-shell > .command-card {
+  display: block;
+  height: 100%;
+}
+
+.command-card-delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 4;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  background: #fff;
+  color: #b91c1c;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(.9);
+  box-shadow: 0 8px 22px rgba(127, 29, 29, .16);
+  transition: opacity .16s ease, transform .16s ease, background .16s ease, color .16s ease;
+}
+
+.command-card-shell:hover .command-card-delete,
+.command-card-shell:focus-within .command-card-delete {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.command-card-delete:hover,
+.command-card-delete:focus-visible {
+  background: #b91c1c;
+  color: #fff;
+  outline: none;
+}
+
+.command-cancel-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  margin: auto;
+  border: 0;
+  border-radius: 18px;
+  padding: 22px;
+  background: #fff;
+  color: var(--text);
+  box-shadow: 0 30px 90px rgba(15, 23, 42, .3);
+}
+
+.command-cancel-dialog::backdrop {
+  background: rgba(15, 23, 42, .58);
+  backdrop-filter: blur(2px);
+}
+
+.command-cancel-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.command-cancel-dialog-head h3 {
+  margin: 4px 0 3px;
+}
+
+.command-cancel-dialog-head p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.command-cancel-dialog-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.command-cancel-warning {
+  margin-bottom: 16px;
+}
+
+.command-cancel-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (hover: none) {
+  .command-card-delete {
+    opacity: 1;
+    pointer-events: auto;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 560px) {
+  .command-card-delete {
+    top: 8px;
+    right: 8px;
+  }
+
+  .command-card-shell > .command-card {
+    padding-right: 52px;
+  }
+
+  .command-cancel-dialog {
+    padding: 18px;
+  }
+
+  .command-cancel-dialog-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
