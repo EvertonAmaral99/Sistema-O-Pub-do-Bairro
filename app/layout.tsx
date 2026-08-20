@@ -3,6 +3,7 @@ import "./globals.css";
 import "./help.css";
 import "./help-pdf-pending.css";
 import "./commands.css";
+import "./checkout-clarity.css";
 import { PrintFormatPolicy } from "@/components/print-format-policy";
 
 export const metadata: Metadata = {
