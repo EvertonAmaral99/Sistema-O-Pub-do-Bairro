@@ -34,6 +34,8 @@ export function PaymentForm(props:PaymentFormProps){
     const root=rootRef.current;
     if(!root)return;
 
+    let frame:number|null=null;
+
     const scan=()=>{
       const form=root.querySelector("form");
       if(!form)return;
@@ -51,9 +53,13 @@ export function PaymentForm(props:PaymentFormProps){
           const method=row.querySelector<HTMLSelectElement>(`#payment-method-${index}`)?.value||row.querySelector<HTMLSelectElement>("select")?.value||"";
           const amountInput=row.querySelector<HTMLInputElement>(`#payment-amount-${index}`)||row.querySelector<HTMLInputElement>('input[type="number"]');
           const amount=moneyToCents(amountInput?.value||"");
-          const amountLabel=row.querySelector<HTMLLabelElement>(`label[for="payment-amount-${index}"]`);
-          if(amountLabel)amountLabel.textContent=method==="CASH"?"Valor da conta a abater (R$)":"Valor pago (R$)";
-          if(method==="CASH"&&amount>0)nextLines.push({key:`row-${index}`,label:`${paymentRows.length>1?`Dinheiro — pagamento ${index+1}`:"Dinheiro"}`,appliedCents:amount});
+          if(method==="CASH"&&amount>0){
+            nextLines.push({
+              key:`row-${index}`,
+              label:paymentRows.length>1?`Dinheiro — pagamento ${index+1}`:"Dinheiro",
+              appliedCents:amount,
+            });
+          }
         });
       }else{
         const selector=form.querySelector<HTMLElement>(".payment-method-selector");
@@ -77,16 +83,24 @@ export function PaymentForm(props:PaymentFormProps){
       });
     };
 
-    scan();
-    const handleInput=()=>scan();
-    root.addEventListener("input",handleInput,true);
-    root.addEventListener("change",handleInput,true);
-    const observer=new MutationObserver(()=>scan());
-    observer.observe(root,{childList:true,subtree:true});
+    const scheduleScan=()=>{
+      if(frame!==null)cancelAnimationFrame(frame);
+      frame=requestAnimationFrame(()=>{
+        frame=null;
+        scan();
+      });
+    };
+
+    scheduleScan();
+    root.addEventListener("input",scheduleScan,true);
+    root.addEventListener("change",scheduleScan,true);
+    root.addEventListener("click",scheduleScan,true);
+
     return()=>{
-      root.removeEventListener("input",handleInput,true);
-      root.removeEventListener("change",handleInput,true);
-      observer.disconnect();
+      root.removeEventListener("input",scheduleScan,true);
+      root.removeEventListener("change",scheduleScan,true);
+      root.removeEventListener("click",scheduleScan,true);
+      if(frame!==null)cancelAnimationFrame(frame);
     };
   },[props.subtotal]);
 
