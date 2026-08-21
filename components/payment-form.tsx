@@ -214,7 +214,7 @@ export function PaymentForm(props:PaymentFormProps){
     return <div className={`cash-change-line ${line.inline?"cash-change-line-inline":""}`} key={line.key}>
       <div className="cash-change-line-title">
         <span>{line.label}</span>
-        <strong>{dueCents>0?`Abater ${brl(Math.min(receivedCents,dueCents))}`:"Sem saldo a abater"}</strong>
+        <strong>{dueCents>0?`Abater ${brl(line.inline?Math.min(receivedCents,dueCents):dueCents)}`:"Sem saldo a abater"}</strong>
       </div>
       <div className="field">
         <label htmlFor={`cash-received-${line.key}`}>Valor recebido do cliente (R$)</label>
