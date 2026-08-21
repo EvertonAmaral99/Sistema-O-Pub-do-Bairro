@@ -87,6 +87,20 @@
   background: #fff;
 }
 
+.mixed-cash-received-slot {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.cash-change-line-inline {
+  border-color: #ead2a8;
+  background: #fffaf0;
+}
+
+.cash-change-line-inline .field {
+  margin: 0;
+}
+
 .cash-change-line-title {
   display: flex;
   align-items: center;
