@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, CircleCheck, Printer } from "lucide-react";
+import { CircleAlert, CircleCheck, Plus, Printer, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { closeCashAction } from "@/app/cash-command-actions";
 import { PrintActionForm } from "@/components/print-action-form";
@@ -16,6 +16,7 @@ type PaymentTotals = {
 };
 
 type ConfirmationKey = "closingAmount" | "confirmedPix" | "confirmedDebit" | "confirmedCredit" | "confirmedHouseAccount" | "confirmedStaffVoucher" | "confirmedStoreCredit";
+type ClosingObservation = { amount: string; description: string };
 
 function toCents(value: string) {
   if (!value.trim()) return null;
@@ -25,6 +26,10 @@ function toCents(value: string) {
 
 function brl(cents: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+}
+
+function emptyObservation(): ClosingObservation {
+  return { amount: "", description: "" };
 }
 
 export function CashClosingForm({
@@ -50,6 +55,7 @@ export function CashClosingForm({
     confirmedStaffVoucher: payments.staffVoucher === 0 ? "0.00" : "",
     confirmedStoreCredit: payments.storeCredit === 0 ? "0.00" : "",
   });
+  const [observations, setObservations] = useState<ClosingObservation[]>([emptyObservation()]);
 
   const fields: Array<{ key: ConfirmationKey; label: string; expected: number; help: string }> = [
     {
@@ -69,6 +75,24 @@ export function CashClosingForm({
   const checks = fields.map((field) => ({ ...field, informed: toCents(values[field.key]), matches: toCents(values[field.key]) === field.expected }));
   const paymentsReconciled = salesTotal === paymentsTotal;
   const readyToClose = paymentsReconciled && checks.every((check) => check.matches && check.informed !== null);
+  const filledObservations = observations.filter((item) => item.amount.trim() || item.description.trim());
+  const observationsComplete = filledObservations.every((item) => (toCents(item.amount) ?? 0) > 0 && item.description.trim().length > 0);
+  const observationTotal = filledObservations.reduce((sum, item) => sum + (toCents(item.amount) ?? 0), 0);
+  const closingObservations = filledObservations
+    .filter((item) => (toCents(item.amount) ?? 0) > 0 && item.description.trim())
+    .map((item) => ({ amountCents: toCents(item.amount) ?? 0, description: item.description.trim() }));
+
+  function updateObservation(index: number, patch: Partial<ClosingObservation>) {
+    setObservations((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  }
+
+  function addObservation() {
+    setObservations((current) => current.length >= 30 ? current : [...current, emptyObservation()]);
+  }
+
+  function removeObservation(index: number) {
+    setObservations((current) => current.length === 1 ? [emptyObservation()] : current.filter((_, itemIndex) => itemIndex !== index));
+  }
 
   return (
     <section className="card cash-closing-card">
@@ -94,6 +118,7 @@ export function CashClosingForm({
 
       <PrintActionForm action={closeCashAction} className="form-stack">
         <input type="hidden" name="cashId" value={cashId} />
+        <input type="hidden" name="closingObservations" value={JSON.stringify(closingObservations)} />
         <div className="cash-confirmation-grid">
           {checks.map((field) => (
             <div className={`field cash-confirmation-field ${field.informed !== null ? (field.matches ? "cash-confirmation-ok" : "cash-confirmation-error") : ""}`} key={field.key}>
@@ -122,10 +147,61 @@ export function CashClosingForm({
           ))}
         </div>
 
-        <div className="field">
-          <label>Observações</label>
-          <textarea className="textarea" name="notes" rows={3} />
-        </div>
+        <section className="card" style={{ padding: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+            <div>
+              <strong>Observações do fechamento</strong>
+              <div><small>Registre um valor e, ao lado, o motivo ou a descrição. Esses lançamentos são informativos e não alteram o caixa automaticamente.</small></div>
+            </div>
+            {observationTotal > 0 && <span className="badge badge-blue">Total: {brl(observationTotal)}</span>}
+          </div>
+
+          <div className="form-stack" style={{ gap: 10 }}>
+            {observations.map((item, index) => (
+              <div key={index} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 0.35fr) minmax(220px, 1fr) auto", gap: 10, alignItems: "end" }}>
+                <div className="field">
+                  <label htmlFor={`closing-observation-amount-${index}`}>Valor (R$)</label>
+                  <input
+                    id={`closing-observation-amount-${index}`}
+                    className="input"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={item.amount}
+                    onChange={(event) => updateObservation(index, { amount: event.target.value })}
+                    placeholder="0,00"
+                    required={Boolean(item.description.trim())}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor={`closing-observation-description-${index}`}>Observação</label>
+                  <input
+                    id={`closing-observation-description-${index}`}
+                    className="input"
+                    type="text"
+                    maxLength={180}
+                    value={item.description}
+                    onChange={(event) => updateObservation(index, { description: event.target.value })}
+                    placeholder="Ex.: retirada para compra emergencial"
+                    required={Boolean(item.amount.trim())}
+                  />
+                </div>
+                <button className="btn btn-light btn-small" type="button" onClick={() => removeObservation(index)} aria-label={`Remover observação ${index + 1}`} title="Remover observação">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <button className="btn btn-light btn-small" type="button" onClick={addObservation} disabled={observations.length >= 30}>
+              <Plus size={16} /> Adicionar observação
+            </button>
+            {!observationsComplete && <small style={{ color: "var(--danger, #b42318)" }}>Preencha o valor e a observação da linha utilizada.</small>}
+          </div>
+        </section>
+
         <div className="field">
           <label>Formato</label>
           <select className="select" name="format" defaultValue="58">
@@ -133,7 +209,7 @@ export function CashClosingForm({
             <option value="a4">Folha A4</option>
           </select>
         </div>
-        <button className="btn btn-dark" type="submit">
+        <button className="btn btn-dark" type="submit" disabled={!observationsComplete}>
           <Printer size={16} /> Fechar e imprimir relatório
         </button>
         {!readyToClose && (
