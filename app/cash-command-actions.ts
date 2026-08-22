@@ -110,6 +110,7 @@ export async function closeCashAction(formData: FormData): Promise<{ url?: strin
     PIX: cents(formData.get("confirmedPix")),
     DEBIT: cents(formData.get("confirmedDebit")),
     CREDIT: cents(formData.get("confirmedCredit")),
+    HOUSE_ACCOUNT: cents(formData.get("confirmedHouseAccount")),
     STAFF_VOUCHER: cents(formData.get("confirmedStaffVoucher")),
     STORE_CREDIT: cents(formData.get("confirmedStoreCredit")),
   };
@@ -153,6 +154,7 @@ export async function closeCashAction(formData: FormData): Promise<{ url?: strin
             PIX: "PIX",
             DEBIT: "débito",
             CREDIT: "crédito",
+            HOUSE_ACCOUNT: "conta da casa",
             STAFF_VOUCHER: "vale funcionário",
             STORE_CREDIT: "crédito em loja",
           };
