@@ -11,7 +11,7 @@ type FinanceProduct = {
 };
 
 const periods={
-  hoje:{label:"Caixa atual",filter:"AND s.cash_session_id=(SELECT id FROM cash_sessions WHERE status='OPEN' LIMIT 1)"},
+  hoje:{label:"Caixa atual",filter:"AND s.cash_session_id=(SELECT id FROM cash_sessions WHERE status='OPEN' ORDER BY opened_at DESC LIMIT 1)"},
   mes:{label:"Este mês",filter:"AND s.created_at >= (date_trunc('month',NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"},
   tudo:{label:"Todo o período",filter:""},
 } as const;
@@ -50,7 +50,7 @@ export default async function FinancePage({searchParams}:{searchParams:Promise<{
   const missingCosts=products.rows.filter((product)=>product.cost_cents===0).length;
 
   return <>
-    <div className="page-head"><div><p className="eyebrow">Gestão financeira</p><h2>Financeiro</h2><p>Acompanhe custos, margens, lucro bruto e o valor financeiro do estoque.</p></div><div className="finance-periods">{Object.entries(periods).map(([key,value])=><Link className={`btn btn-small ${periodKey===key?"btn-primary":"btn-light"}`} href={`/financeiro?periodo=${key}`} key={key}>{value.label}</Link>)}</div></div>
+    <div className="page-head"><div><p className="eyebrow">Gestão financeira</p><h2>Financeiro</h2><p>Acompanhe custos, margens, lucro bruto e o valor financeiro do estoque.</p></div><div className="finance-periods"><Link className="btn btn-small btn-primary" href="/financeiro/faturamento-hoje">Faturamento de hoje</Link>{Object.entries(periods).map(([key,value])=><Link className={`btn btn-small ${periodKey===key?"btn-primary":"btn-light"}`} href={`/financeiro?periodo=${key}`} key={key}>{value.label}</Link>)}</div></div>
     {params.erro&&<div className="alert alert-error">{params.erro}</div>}
     {params.sucesso&&<div className="alert alert-success">Custo, margem e preço do produto foram atualizados.</div>}
     {missingCosts>0&&<div className="alert alert-error"><PackageSearch size={17}/> {missingCosts} produto(s) ainda estão sem custo cadastrado. Enquanto isso, os cálculos de lucro e estoque ficam abaixo do valor real.</div>}

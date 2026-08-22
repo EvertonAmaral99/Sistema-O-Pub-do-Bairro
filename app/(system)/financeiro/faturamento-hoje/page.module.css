@@ -1,0 +1,149 @@
+.screen {
+  min-height: calc(100vh - 150px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(238, 27, 36, .10), transparent 34%),
+    linear-gradient(145deg, #fffafa 0%, #f9eeee 100%);
+  box-shadow: 0 14px 44px rgba(91, 18, 25, .08);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(228, 201, 204, .85);
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  transition: background .18s ease, color .18s ease;
+}
+
+.backLink:hover {
+  background: rgba(238, 27, 36, .08);
+  color: var(--amber-dark);
+}
+
+.liveStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.statusDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--green);
+  box-shadow: 0 0 0 5px rgba(45, 123, 87, .12);
+}
+
+.statusDotOffline {
+  background: var(--red);
+  box-shadow: 0 0 0 5px rgba(197, 22, 32, .10);
+}
+
+.center {
+  flex: 1;
+  min-height: 430px;
+  display: grid;
+  place-items: center;
+  padding: 42px 24px;
+  text-align: center;
+}
+
+.hero {
+  width: min(1120px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--amber-dark);
+  font-size: clamp(12px, 1.2vw, 15px);
+  font-weight: 900;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.amount {
+  margin: 0;
+  max-width: 100%;
+  color: var(--ink);
+  font: 800 clamp(64px, 10vw, 154px)/.92 Georgia, serif;
+  letter-spacing: -.065em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(14px, 1.3vw, 18px);
+  font-weight: 650;
+}
+
+.cashClosed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 13px;
+  border-radius: 999px;
+  background: #f6e2df;
+  color: #8d362e;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.footer {
+  display: flex;
+  justify-content: center;
+  padding: 16px 22px 20px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .screen {
+    min-height: calc(100vh - 122px);
+    border-radius: 16px;
+  }
+
+  .topbar {
+    padding: 14px;
+  }
+
+  .liveStatus span:last-child {
+    display: none;
+  }
+
+  .center {
+    min-height: 390px;
+    padding: 32px 16px;
+  }
+
+  .amount {
+    font-size: clamp(54px, 18vw, 92px);
+  }
+}
