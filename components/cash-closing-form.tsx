@@ -10,11 +10,12 @@ type PaymentTotals = {
   pix: number;
   debit: number;
   credit: number;
+  houseAccount: number;
   staffVoucher: number;
   storeCredit: number;
 };
 
-type ConfirmationKey = "closingAmount" | "confirmedPix" | "confirmedDebit" | "confirmedCredit" | "confirmedStaffVoucher" | "confirmedStoreCredit";
+type ConfirmationKey = "closingAmount" | "confirmedPix" | "confirmedDebit" | "confirmedCredit" | "confirmedHouseAccount" | "confirmedStaffVoucher" | "confirmedStoreCredit";
 
 function toCents(value: string) {
   if (!value.trim()) return null;
@@ -45,6 +46,7 @@ export function CashClosingForm({
     confirmedPix: payments.pix === 0 ? "0.00" : "",
     confirmedDebit: payments.debit === 0 ? "0.00" : "",
     confirmedCredit: payments.credit === 0 ? "0.00" : "",
+    confirmedHouseAccount: payments.houseAccount === 0 ? "0.00" : "",
     confirmedStaffVoucher: payments.staffVoucher === 0 ? "0.00" : "",
     confirmedStoreCredit: payments.storeCredit === 0 ? "0.00" : "",
   });
@@ -59,6 +61,7 @@ export function CashClosingForm({
     { key: "confirmedPix", label: "PIX conferido (R$)", expected: payments.pix, help: "Total registrado em PIX" },
     { key: "confirmedDebit", label: "Débito conferido (R$)", expected: payments.debit, help: "Total registrado em débito" },
     { key: "confirmedCredit", label: "Crédito conferido (R$)", expected: payments.credit, help: "Total registrado em crédito" },
+    { key: "confirmedHouseAccount", label: "Conta da casa conferida (R$)", expected: payments.houseAccount, help: "Total registrado como conta da casa" },
     { key: "confirmedStaffVoucher", label: "Vale conferido (R$)", expected: payments.staffVoucher, help: "Total registrado em vale" },
     { key: "confirmedStoreCredit", label: "Crédito em loja conferido (R$)", expected: payments.storeCredit, help: "Total usado dos créditos de clientes" },
   ];
