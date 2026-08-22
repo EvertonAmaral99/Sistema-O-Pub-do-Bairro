@@ -70,12 +70,26 @@ export function TodayRevenueLive({ initialData }: { initialData: CurrentCashReve
     <>
       <div className={styles.center}>
         <div className={styles.hero}>
-          <p className={styles.eyebrow}>Faturamento do caixa aberto</p>
-          <strong className={styles.amount} aria-live="polite">{formatMoney(data.revenueCents)}</strong>
+          <p className={styles.eyebrow}>Total previsto</p>
+          <strong className={styles.amount} aria-live="polite">{formatMoney(data.totalCents)}</strong>
+
+          <div className={styles.breakdown}>
+            <div className={styles.breakdownCard}>
+              <span>Já faturado</span>
+              <strong>{formatMoney(data.revenueCents)}</strong>
+              <small>{data.salesCount} venda(s) concluída(s) no caixa aberto</small>
+            </div>
+            <span className={styles.plus} aria-hidden="true">+</span>
+            <div className={`${styles.breakdownCard} ${styles.pendingCard}`}>
+              <span>Valor a entrar</span>
+              <strong>{formatMoney(data.pendingCents)}</strong>
+              <small>{data.pendingCount} comanda(s) aberta(s)</small>
+            </div>
+          </div>
+
           {data.cashOpen ? (
             <p className={styles.meta}>
-              {data.salesCount} venda(s) concluída(s) neste caixa
-              {data.openedAt ? ` · aberto em ${formatDateTime(data.openedAt)}` : ""}
+              Caixa aberto{data.openedAt ? ` em ${formatDateTime(data.openedAt)}` : ""}
             </p>
           ) : (
             <span className={styles.cashClosed}><AlertCircle size={16}/> Nenhum caixa está aberto no momento</span>
@@ -84,7 +98,7 @@ export function TodayRevenueLive({ initialData }: { initialData: CurrentCashReve
       </div>
       <div className={styles.footer}>
         {!connected
-          ? "Não foi possível atualizar agora. O último valor recebido continua na tela e uma nova tentativa será feita automaticamente."
+          ? "Não foi possível atualizar agora. Os últimos valores recebidos continuam na tela e uma nova tentativa será feita automaticamente."
           : lastUpdatedAt
             ? `Atualizado automaticamente · última consulta às ${formatUpdateTime(lastUpdatedAt)}`
             : "Atualização automática ativa · nova consulta a cada 2,5 segundos"}
