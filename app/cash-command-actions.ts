@@ -30,6 +30,34 @@ function moneyText(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value / 100);
 }
 
+type ClosingObservation = { amountCents: number; description: string };
+
+function closingObservationsValue(formData: FormData): ClosingObservation[] {
+  const raw = String(formData.get("closingObservations") ?? "[]").trim() || "[]";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("As observações do fechamento estão inválidas.");
+  }
+  if (!Array.isArray(parsed) || parsed.length > 30) {
+    throw new Error("As observações do fechamento estão inválidas.");
+  }
+  return parsed.map((entry) => {
+    if (!entry || typeof entry !== "object") throw new Error("Uma das observações do fechamento está inválida.");
+    const source = entry as Record<string, unknown>;
+    const amountCents = Math.trunc(Number(source.amountCents));
+    const description = String(source.description ?? "").trim().replace(/\s+/g, " ");
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents > 2147483647) {
+      throw new Error("Informe um valor válido em todas as observações utilizadas.");
+    }
+    if (!description || description.length > 180) {
+      throw new Error("Informe uma descrição de até 180 caracteres em todas as observações utilizadas.");
+    }
+    return { amountCents, description };
+  });
+}
+
 export async function openCommandAction(formData: FormData) {
   const user = await requirePermission("COMMANDS");
   const commandNumberText = String(formData.get("commandNumber") ?? "").trim();
@@ -117,9 +145,8 @@ export async function closeCashAction(formData: FormData): Promise<{ url?: strin
   const notes = String(formData.get("notes") ?? "").trim() || null;
 
   try {
+    const closingObservations = closingObservationsValue(formData);
     await transaction(async (client) => {
-      // O caixa é travado antes da checagem de comandas. A abertura de comanda usa a mesma trava,
-      // impedindo que uma comanda seja criada ao mesmo tempo em que o caixa está sendo encerrado.
       const current = await client.query<{ opening_amount_cents: number }>(
         "SELECT opening_amount_cents FROM cash_sessions WHERE id=$1 AND status='OPEN' FOR UPDATE",
         [cashId],
@@ -169,8 +196,8 @@ export async function closeCashAction(formData: FormData): Promise<{ url?: strin
       }
 
       await client.query(
-        "UPDATE cash_sessions SET status='CLOSED',closed_by=$1,closed_at=NOW(),closing_amount_cents=$2,expected_amount_cents=$3,notes=$4 WHERE id=$5 AND status='OPEN'",
-        [user.id, closingAmount, expected, notes, cashId],
+        "UPDATE cash_sessions SET status='CLOSED',closed_by=$1,closed_at=NOW(),closing_amount_cents=$2,expected_amount_cents=$3,notes=$4,closing_observations=$5::jsonb WHERE id=$6 AND status='OPEN'",
+        [user.id, closingAmount, expected, notes, JSON.stringify(closingObservations), cashId],
       );
       await auditLog(
         {
@@ -179,7 +206,7 @@ export async function closeCashAction(formData: FormData): Promise<{ url?: strin
           entityType: "CASH",
           entityId: cashId,
           description: `Fechou o caixa após conferir ${moneyText(salesTotal)} em vendas e ${moneyText(expected)} em espécie.`,
-          metadata: { openingAmount: current.rows[0].opening_amount_cents, salesTotal, paymentsTotal, paymentTotals, closingAmount, expected },
+          metadata: { openingAmount: current.rows[0].opening_amount_cents, salesTotal, paymentsTotal, paymentTotals, closingAmount, expected, closingObservations },
         },
         client,
       );
