@@ -17,10 +17,11 @@ import {
 } from "../lib/roles";
 
 test("mantém todas as formas de pagamento em uma única configuração", () => {
-  assert.deepEqual(PAYMENT_METHOD_VALUES, ["CASH", "PIX", "DEBIT", "CREDIT", "STAFF_VOUCHER", "STORE_CREDIT"]);
+  assert.deepEqual(PAYMENT_METHOD_VALUES, ["CASH", "PIX", "DEBIT", "CREDIT", "HOUSE_ACCOUNT", "STAFF_VOUCHER", "STORE_CREDIT"]);
+  assert.equal(PAYMENT_METHOD_LABELS.HOUSE_ACCOUNT, "Conta da casa");
   assert.equal(PAYMENT_METHOD_LABELS.STAFF_VOUCHER, "Vale funcionário");
   assert.equal(paymentMethodLabel("STORE_CREDIT"), "Crédito em loja");
-  assert.deepEqual(BASE_PAYMENT_METHOD_OPTIONS.map((method) => method.value), ["CASH", "PIX", "DEBIT", "CREDIT", "STAFF_VOUCHER"]);
+  assert.deepEqual(BASE_PAYMENT_METHOD_OPTIONS.map((method) => method.value), ["CASH", "PIX", "DEBIT", "CREDIT", "HOUSE_ACCOUNT", "STAFF_VOUCHER"]);
 });
 
 test("mantém rotas e chaves de módulos sem duplicidade", () => {
