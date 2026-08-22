@@ -6,17 +6,28 @@ import { formatDateTime, formatMoney } from "@/lib/format";
 import type { CurrentCashRevenue } from "@/lib/current-cash-revenue";
 import styles from "./page.module.css";
 
+function formatUpdateTime(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
+}
+
 export function TodayRevenueLive({ initialData }: { initialData: CurrentCashRevenue }) {
   const [data, setData] = useState(initialData);
   const [connected, setConnected] = useState(true);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState(() => new Date());
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
+    let inFlight = false;
     let controller: AbortController | null = null;
 
     async function refresh() {
-      controller?.abort();
+      if (inFlight) return;
+      inFlight = true;
       controller = new AbortController();
       try {
         const response = await fetch("/api/financeiro/faturamento-hoje", {
@@ -28,10 +39,12 @@ export function TodayRevenueLive({ initialData }: { initialData: CurrentCashReve
         if (disposed) return;
         setData(nextData);
         setConnected(true);
-        setLastUpdatedAt(new Date());
+        setLastUpdatedAt(new Date().toISOString());
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         if (!disposed) setConnected(false);
+      } finally {
+        inFlight = false;
       }
     }
 
@@ -70,9 +83,11 @@ export function TodayRevenueLive({ initialData }: { initialData: CurrentCashReve
         </div>
       </div>
       <div className={styles.footer}>
-        {connected
-          ? `Atualizado automaticamente · última consulta às ${lastUpdatedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
-          : "Não foi possível atualizar agora. O último valor recebido continua na tela e uma nova tentativa será feita automaticamente."}
+        {!connected
+          ? "Não foi possível atualizar agora. O último valor recebido continua na tela e uma nova tentativa será feita automaticamente."
+          : lastUpdatedAt
+            ? `Atualizado automaticamente · última consulta às ${formatUpdateTime(lastUpdatedAt)}`
+            : "Atualização automática ativa · nova consulta a cada 2,5 segundos"}
       </div>
     </>
   );
