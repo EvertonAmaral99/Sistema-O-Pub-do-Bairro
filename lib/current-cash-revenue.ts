@@ -9,12 +9,12 @@ export type CurrentCashRevenue = {
 };
 
 export async function getCurrentCashRevenue(): Promise<CurrentCashRevenue> {
-  const result = await query<{ id: number; opened_at: string; revenue: string; sales_count: string }>(`
+  const result = await query<{ id: number; opened_at: string | Date; revenue: string; sales_count: string }>(`
     SELECT
       cs.id,
       cs.opened_at,
       COALESCE(SUM(s.total_cents) FILTER (WHERE s.status='COMPLETED'), 0)::text AS revenue,
-      COUNT(s.id) FILTER (WHERE s.status='COMPLETED')::text AS sales_count
+      (COUNT(s.id) FILTER (WHERE s.status='COMPLETED'))::text AS sales_count
     FROM cash_sessions cs
     LEFT JOIN sales s ON s.cash_session_id = cs.id
     WHERE cs.status='OPEN'
@@ -31,7 +31,7 @@ export async function getCurrentCashRevenue(): Promise<CurrentCashRevenue> {
   return {
     cashOpen: true,
     cashSessionId: row.id,
-    openedAt: row.opened_at,
+    openedAt: new Date(row.opened_at).toISOString(),
     revenueCents: Number(row.revenue ?? 0),
     salesCount: Number(row.sales_count ?? 0),
   };
