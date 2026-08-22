@@ -3,6 +3,7 @@ export const PAYMENT_METHOD_OPTIONS = [
   { value: "PIX", label: "PIX" },
   { value: "DEBIT", label: "Cartão de débito" },
   { value: "CREDIT", label: "Cartão de crédito" },
+  { value: "HOUSE_ACCOUNT", label: "Conta da casa" },
   { value: "STAFF_VOUCHER", label: "Vale funcionário" },
   { value: "STORE_CREDIT", label: "Crédito em loja" },
 ] as const;
