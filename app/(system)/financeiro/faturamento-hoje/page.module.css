@@ -6,7 +6,7 @@
   border-radius: 22px;
   overflow: hidden;
   background:
-    radial-gradient(circle at 50% 44%, rgba(238, 27, 36, .10), transparent 34%),
+    radial-gradient(circle at 50% 35%, rgba(238, 27, 36, .10), transparent 34%),
     linear-gradient(145deg, #fffafa 0%, #f9eeee 100%);
   box-shadow: 0 14px 44px rgba(91, 18, 25, .08);
 }
@@ -63,7 +63,7 @@
 
 .center {
   flex: 1;
-  min-height: 430px;
+  min-height: 500px;
   display: grid;
   place-items: center;
   padding: 42px 24px;
@@ -74,7 +74,7 @@
   width: min(1120px, 100%);
   display: grid;
   justify-items: center;
-  gap: 18px;
+  gap: 20px;
 }
 
 .eyebrow {
@@ -90,16 +90,68 @@
   margin: 0;
   max-width: 100%;
   color: var(--ink);
-  font: 800 clamp(64px, 10vw, 154px)/.92 Georgia, serif;
+  font: 800 clamp(64px, 9vw, 142px)/.92 Georgia, serif;
   letter-spacing: -.065em;
   overflow-wrap: anywhere;
   text-wrap: balance;
 }
 
+.breakdown {
+  width: min(820px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+}
+
+.breakdownCard {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 250, 250, .86);
+  box-shadow: 0 8px 24px rgba(91, 18, 25, .05);
+}
+
+.breakdownCard > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.breakdownCard > strong {
+  color: var(--ink);
+  font: 800 clamp(28px, 3.2vw, 48px)/1 Georgia, serif;
+  letter-spacing: -.035em;
+  overflow-wrap: anywhere;
+}
+
+.breakdownCard > small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.pendingCard {
+  background: #fff7e9;
+  border-color: #e3c98e;
+}
+
+.plus {
+  align-self: center;
+  color: var(--muted);
+  font: 800 28px/1 Georgia, serif;
+}
+
 .meta {
   margin: 0;
   color: var(--muted);
-  font-size: clamp(14px, 1.3vw, 18px);
+  font-size: clamp(13px, 1.1vw, 16px);
   font-weight: 650;
 }
 
@@ -139,11 +191,28 @@
   }
 
   .center {
-    min-height: 390px;
-    padding: 32px 16px;
+    min-height: 460px;
+    padding: 30px 14px;
   }
 
   .amount {
-    font-size: clamp(54px, 18vw, 92px);
+    font-size: clamp(52px, 17vw, 88px);
+  }
+
+  .breakdown {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .plus {
+    display: none;
+  }
+
+  .breakdownCard {
+    padding: 15px 16px;
+  }
+
+  .breakdownCard > strong {
+    font-size: clamp(28px, 10vw, 40px);
   }
 }
